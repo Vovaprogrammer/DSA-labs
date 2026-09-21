@@ -304,9 +304,6 @@ def plot_results(results: dict[str, list[tuple[int, float]]], out_dir: Path) -> 
     fig2.savefig(pow_path, dpi=150)
 
     print(f"\nГрафики сохранены:\n  {loglog_path}\n  {pow_path}")
-    # TODO: в отчёте объяснить, почему для binary_pow выбраны ЛИНЕЙНЫЕ оси
-    # по log₂ n, а не log-log (какой вид имеет логарифмическая зависимость
-    # в осях log-log и почему по ней трудно судить о порядке роста).
 
 
 # ---------------------------------------------------------------------------
@@ -331,8 +328,6 @@ def main() -> None:
     print("\nНаклон в осях log-log (оценка показателя степени):")
     for name in ("array_sum", "array_max", "count_equal_pairs"):
         print(f"  {name:20s} {log_log_slope(results[name]):.3f}")
-    # TODO: сопоставить наклоны с аналитическими оценками из отчёта
-    # и объяснить расхождения (константы, кэш, накладные расходы интерпретатора).
 
     plot_results(results, args.out)
 
