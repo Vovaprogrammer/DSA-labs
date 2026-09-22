@@ -175,6 +175,11 @@ def self_check() -> None:
     assert binary_pow(2, 10) == 1024
     assert binary_pow(2, 10, mod=1000) == 24
 
+    # Все элементы равны — тот же класс входов, что и для count_equal_pairs выше
+    assert array_sum([5, 5, 5]) == 15
+    assert array_max([5, 5, 5]) == 5
+    assert count_equal_pairs([1, 2, 3, 4, 5]) == 0    # без повторов пар быть не должно
+
     # Сверка с эталонными реализациями на случайных данных
     rng = random.Random(0)
     for _ in range(200):
@@ -185,8 +190,22 @@ def self_check() -> None:
         x, n = rng.randint(2, 50), rng.randint(0, 64)
         assert binary_pow(x, n, mod=POW_MOD) == pow(x, n, POW_MOD)
 
-    # TODO: добавить собственные проверки инвариантов и описать их в отчёте
-    # (например: count_equal_pairs на массиве из попарно различных элементов = 0).
+    # Собственные инварианты
+    rng = random.Random(1)
+    for _ in range(100):
+        a = [rng.randint(-50, 50) for _ in range(rng.randint(1, 30))]
+        shuffled = a[:]
+        rng.shuffle(shuffled)
+        assert array_sum(a) == array_sum(shuffled)      # сумма не зависит от порядка
+        assert array_max(a) in a                          # максимум — реальный элемент
+        assert all(x <= array_max(a) for x in a)           # и он не меньше остальных
+
+    # x^(a+b) = x^a * x^b — проверка алгебраического свойства степени, без опоры на pow()
+    for _ in range(100):
+        x, a, b = rng.randint(2, 20), rng.randint(0, 30), rng.randint(0, 30)
+        assert binary_pow(x, a, mod=POW_MOD) * binary_pow(x, b, mod=POW_MOD) % POW_MOD \
+            == binary_pow(x, a + b, mod=POW_MOD)
+
     print("self_check: OK")
 
 
