@@ -139,40 +139,48 @@ class DynamicArray:
 
     def _grow(self) -> None:
         """Увеличить ёмкость в 2 раза и скопировать элементы в новый буфер."""
-        # TODO: выделить новый буфер размера 2 * capacity, перенести _size элементов,
-        # увеличить self.copies на число перенесённых элементов
-        raise NotImplementedError
+        new_capacity = 2 * self._capacity
+        new_buffer: list = [None] * new_capacity
+        for i in range(self._size):
+            new_buffer[i] = self._buffer[i]
+        self.copies += self._size
+        self._buffer = new_buffer
+        self._capacity = new_capacity
 
     def append(self, value) -> None:
         """Добавить элемент в конец; при size == capacity сначала вызвать _grow.
-
-        Амортизированная сложность: TODO (обосновать методом учёта в отчёте).
-        """
-        # TODO: рост при необходимости, запись в ячейку _buffer[_size], инкремент _size
-        raise NotImplementedError
+        Амортизированная сложность: O(1)."""
+        if self._capacity == self._size:
+            self._grow()
+        self._buffer[self._size] = value
+        self._size += 1
 
     def pop(self):
         """Удалить и вернуть последний элемент; для пустого массива — IndexError.
-
         Сжатие буфера необязательно. Если реализуете его, уменьшайте ёмкость
         вдвое, когда size опускается до capacity // 4, и не ниже
         INITIAL_CAPACITY (перенесённые элементы тоже учитываются в copies):
         сжатие уже при заполнении на ½ даёт Θ(n) на операцию, если чередовать
-        append и pop на границе ёмкости.
-        """
-        # TODO: проверка на пустоту, чтение _buffer[_size - 1], очистка ячейки
-        # (None — чтобы буфер не удерживал объект), декремент _size
-        raise NotImplementedError
+        append и pop на границе ёмкости."""
+        if self._size == 0:
+            raise IndexError("Массив пустой.")
+        deleting_element = self._buffer[self._size - 1]
+        self._buffer[self._size - 1] = None
+        self._size -= 1
+        return deleting_element
 
     def get(self, index: int):
         """Вернуть элемент по индексу 0 <= index < size; иначе IndexError."""
-        # TODO: проверка границ (включая отрицательные индексы) + чтение из буфера
-        raise NotImplementedError
+        if 0 <= index < self._size:
+            return self._buffer[index]
+        raise IndexError("Выход за пределы массива.")
 
     def set(self, index: int, value) -> None:
         """Записать элемент по индексу 0 <= index < size; иначе IndexError."""
-        # TODO: проверка границ + запись в буфер
-        raise NotImplementedError
+        if 0 <= index < self._size:
+            self._buffer[index] = value
+        else:
+            raise IndexError("Выход за пределы массива.")
 
 
 # ---------------------------------------------------------------------------
