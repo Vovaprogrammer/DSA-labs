@@ -198,20 +198,20 @@ class Stack:
         return len(self._data)
 
     def push(self, value) -> None:
-        """Положить элемент на вершину. Амортизированная сложность: TODO."""
-        # TODO: делегировать DynamicArray.append
-        raise NotImplementedError
+        """Положить элемент на вершину. Амортизированная сложность: O(1)."""
+        self._data.append(value)
 
     def pop(self):
         """Снять элемент с вершины; для пустого стека — IndexError."""
-        # TODO: делегировать DynamicArray.pop
-        raise NotImplementedError
+        if len(self) == 0:
+            raise IndexError("Стек пустой.")
+        return self._data.pop()
 
     def peek(self):
         """Вернуть вершину без удаления; для пустого стека — IndexError."""
-        # TODO: для пустого стека — IndexError с понятным сообщением,
-        # иначе DynamicArray.get(len - 1)
-        raise NotImplementedError
+        if len(self) == 0:
+            raise IndexError("Стек пустой.")
+        return self._data.get(len(self) - 1)
 
 
 class _Node:
@@ -227,10 +227,8 @@ class _Node:
 
 class Deque:
     """Дек (двусторонняя очередь) на базе двусвязного списка.
-
     Все четыре операции концов должны стоить O(1) — без амортизации,
-    в отличие от вставки в начало динамического массива (см. отчёт).
-    """
+    в отличие от вставки в начало динамического массива (см. отчёт)."""
 
     def __init__(self) -> None:
         self._head: _Node | None = None
@@ -241,24 +239,52 @@ class Deque:
         return self._size
 
     def push_front(self, value) -> None:
-        """Добавить элемент в начало. Сложность: TODO."""
-        # TODO: создать узел, перевязать ссылки head (учесть пустой дек)
-        raise NotImplementedError
+        """Добавить элемент в начало. Сложность: Θ(1)."""
+        node = _Node(value, None, self._head)  # новый узел: prev = None, next = старая голова
+        if self._head is None:                 # дек был пуст
+            self._tail = node                  # единственный узел — он же хвост
+        else:
+            self._head.prev = node             # старая голова смотрит назад на новый узел
+        self._head = node                      # новый узел — новая голова
+        self._size += 1
 
     def push_back(self, value) -> None:
-        """Добавить элемент в конец. Сложность: TODO."""
-        # TODO: симметрично push_front для tail
-        raise NotImplementedError
+        """Добавить элемент в конец. Сложность: Θ(1)."""
+        node = _Node(value, self._tail, None)
+        if self._tail is None:
+            self._head = node
+        else:
+            self._tail.next = node
+        self._tail = node
+        self._size += 1
 
     def pop_front(self):
         """Извлечь элемент из начала; для пустого дека — IndexError."""
-        # TODO: учесть переход к пустому деку (tail тоже обнуляется)
-        raise NotImplementedError
+        if len(self) == 0:
+            raise IndexError("Дек пустой.")
+        value = self._head.value
+        if len(self) == 1:
+            self._head = self._tail = None
+            self._size -= 1
+            return value
+        self._head = self._head.next
+        self._head.prev = None
+        self._size -= 1
+        return value
 
     def pop_back(self):
         """Извлечь элемент из конца; для пустого дека — IndexError."""
-        # TODO: симметрично pop_front (при опустошении обнуляется и head)
-        raise NotImplementedError
+        if len(self) == 0:
+            raise IndexError("Дек пустой.")
+        value = self._tail.value
+        if len(self) == 1:
+            self._head = self._tail = None
+            self._size -= 1
+            return value
+        self._tail = self._tail.prev
+        self._tail.next = None
+        self._size -= 1
+        return value
 
 
 # ---------------------------------------------------------------------------
