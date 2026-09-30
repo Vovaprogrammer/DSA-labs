@@ -626,6 +626,112 @@ def check_variant_ops(stack_ops: list[Op], deque_ops: list[Op]) -> None:
     compare_with_reference(deque_ops, deque_methods(Deque()),
                            std_deque_methods(collections.deque()), "ops_deque.txt")
 
+def check_array_invariants(arr: DynamicArray, where: str) -> None:
+    """Инварианты DynamicArray: size <= capacity, ёмкость = 4·2^k, свободные ячейки пусты."""
+    size, capacity, buffer = arr._size, arr._capacity, arr._buffer
+    initial = DynamicArray.INITIAL_CAPACITY
+    expect(0 <= size <= capacity, f"{where}: size = {size}, capacity = {capacity}")
+    expect(len(buffer) == capacity, f"{where}: длина буфера {len(buffer)}, capacity {capacity}")
+    ratio = capacity // initial
+    expect(capacity % initial == 0 and ratio & (ratio - 1) == 0,
+           f"{where}: capacity = {capacity} — не {initial}·2^k (рост должен быть x2)")
+    expect(all(cell is None for cell in buffer[size:]),
+           f"{where}: в свободных ячейках [size, capacity) остались значения")
+
+
+def check_deque_invariants(dq: Deque, where: str) -> None:
+    """Инварианты Deque: head/tail/size согласованы, концы замкнуты, связи двусторонние."""
+    head, tail, size = dq._head, dq._tail, dq._size
+    expect((head is None) == (tail is None) == (size == 0),
+           f"{where}: head is None: {head is None}, tail is None: {tail is None}, size = {size}")
+    if size == 0:
+        return
+    expect(head.prev is None, f"{where}: у головы prev не None")
+    expect(tail.next is None, f"{where}: у хвоста next не None")
+    node, prev, steps = head, None, 0
+    while node is not None:  # проход вперёд с проверкой обратных ссылок
+        expect(node.prev is prev, f"{where}: у узла №{steps} prev не ведёт назад")
+        prev, node, steps = node, node.next, steps + 1
+        expect(steps <= size, f"{where}: цепочка next длиннее size = {size}")
+    expect(steps == size and prev is tail,
+           f"{where}: по next пройдено {steps} узлов при size = {size} или конец не _tail")
+    node, last, steps = tail, None, 0
+    while node is not None:  # проход назад
+        last, node, steps = node, node.prev, steps + 1
+        expect(steps <= size, f"{where}: цепочка prev длиннее size = {size}")
+    expect(steps == size and last is head,
+           f"{where}: по prev пройдено {steps} узлов при size = {size} или конец не _head")
+
+
+def check_invariants() -> None:
+    """Инварианты после каждой операции случайных серий; один элемент; FIFO/LIFO."""
+    # DynamicArray: 3000 случайных операций (размер доходит до ~1500: границы 4 ... 2048)
+    rng = random.Random(3)
+    arr, ref = DynamicArray(), []
+    check_array_invariants(arr, "пустой DynamicArray")
+    for i in range(3_000):
+        op = rng.choice(("append", "append", "append", "pop", "set", "get"))
+        where = f"DynamicArray, шаг {i} ({op}), size = {len(ref)}"
+        cap_before, copies_before = arr.capacity, arr.copies
+        if op == "append":
+            arr.append(i)
+            ref.append(i)
+        elif op == "pop":
+            if ref:
+                expect(arr.pop() == ref.pop(), f"{where}: pop() вернул не последний элемент")
+            else:
+                expect_index_error(arr.pop, where)
+        elif ref:
+            k = rng.randrange(len(ref))
+            if op == "set":
+                arr.set(k, -i)
+                ref[k] = -i
+            expect(arr.get(k) == ref[k], f"{where}: get({k}) отличается от эталона")
+        expect(len(arr) == len(ref), f"{where}: len = {len(arr)}, эталон {len(ref)}")
+        if arr.capacity != cap_before:  # рост: вдвое и ровно cap_before копирований
+            expect(arr.capacity == 2 * cap_before and arr.copies == copies_before + cap_before,
+                   f"{where}: capacity {cap_before} -> {arr.capacity}, "
+                   f"copies {copies_before} -> {arr.copies}")
+        else:
+            expect(arr.copies == copies_before, f"{where}: copies изменился без роста ёмкости")
+        check_array_invariants(arr, where)
+
+    # Deque: 5000 случайных операций с обоих концов, инварианты после каждой
+    pushes, pops = ("push_front", "push_back"), ("pop_front", "pop_back")
+    dq, std = Deque(), collections.deque()
+    own, ref_methods = deque_methods(dq), std_deque_methods(std)
+    for i, (op, arg) in enumerate(random_ops(random.Random(4), pushes, pops, 5_000, 50), 1):
+        where = f"Deque, операция №{i} ({op}), size = {len(std)}"
+        got, expected = apply_op(own, op, arg), apply_op(ref_methods, op, arg)
+        expect(got == expected, f"{where}: получено {got!r}, эталон {expected!r}")
+        check_deque_invariants(dq, where)
+
+    # один элемент: DynamicArray, Stack
+    arr = DynamicArray()
+    arr.append(7)
+    expect(len(arr) == 1 and arr.get(0) == 7, "DynamicArray с одним элементом")
+    check_array_invariants(arr, "DynamicArray, один элемент")
+    expect(arr.pop() == 7 and len(arr) == 0, "DynamicArray: pop() единственного элемента")
+    expect_index_error(arr.pop, "DynamicArray: pop() после единственного элемента")
+    st = Stack()
+    st.push(7)
+    expect(st.peek() == 7 and len(st) == 1, "Stack с одним элементом: peek/len")
+    expect(st.pop() == 7 and len(st) == 0, "Stack: pop() единственного элемента")
+    expect_index_error(st.peek, "Stack: peek() после единственного элемента")
+
+    # порядок: FIFO с обоих направлений и LIFO на одном конце (дек)
+    items = list(range(10))
+    dq = Deque()
+    for x in items:
+        dq.push_back(x)
+    expect([dq.pop_front() for _ in items] == items, "Deque FIFO: push_back / pop_front")
+    for x in items:
+        dq.push_front(x)
+    expect([dq.pop_back() for _ in items] == items, "Deque FIFO: push_front / pop_back")
+    for x in items:
+        dq.push_back(x)
+    expect([dq.pop_back() for _ in items] == items[::-1], "Deque LIFO: push_back / pop_back")
+    check_deque_invariants(dq, "Deque после серий FIFO/LIFO")
 
 def self_check(stack_ops: list[Op], deque_ops: list[Op]) -> None:
     """Все проверки по разделам; при любой ошибке замеры не выполняются."""
@@ -635,6 +741,7 @@ def self_check(stack_ops: list[Op], deque_ops: list[Op]) -> None:
         ("Stack", check_stack),
         ("Deque", check_deque),
         ("операции варианта", lambda: check_variant_ops(stack_ops, deque_ops)),
+        ("инварианты", check_invariants),
     )
     failed = 0
     print("self_check:")
@@ -654,7 +761,6 @@ def self_check(stack_ops: list[Op], deque_ops: list[Op]) -> None:
             failed += 1
         else:
             print(f"  {name}: OK")
-    # TODO: добавить собственные проверки инвариантов и описать их в отчёте.
     if failed:
         raise SystemExit(f"self_check: не пройдено разделов — {failed}; "
                          f"замеры выполняются только после всех проверок.")
@@ -751,7 +857,6 @@ def run_benchmarks(append_sizes: list[int], stack_ops: list[Op],
         fib_memo(n)
         print(f"  n={n:>2}  F(n)={value:>6}  fib_naive: {CALLS['fib_naive']:>7} вызовов"
               f"  fib_memo: {CALLS['fib_memo']:>2} вызовов")
-    # TODO: вывести в отчёте формулы числа вызовов обеих функций и сверить с таблицей.
 
     print("\nСерии append на размерах варианта:")
     results["append"] = []
@@ -764,8 +869,6 @@ def run_benchmarks(append_sizes: list[int], stack_ops: list[Op],
         results["append"].append((n, t_own, t_list, cost))
         print(f"  n={n:>7}  t/n: DynamicArray {t_own:.2e} c, list {t_list:.2e} c"
               f"  копирований {arr.copies:>7}  (n + копирования)/n = {cost:.3f}")
-    # TODO: объяснить методом учёта, почему (n + копирования)/n < 3 и почему
-    # у соседних размеров 2**k и 2**k + 1 эта величина различается почти на 1.
 
     for key, title in FRONT_TITLES.items():
         print(f"\n{title}: время одной операции при размере n = "
@@ -792,8 +895,6 @@ def run_benchmarks(append_sizes: list[int], stack_ops: list[Op],
         t_ref = bench(lambda: replay(ops, make_ref())) / len(ops)
         print(f"  {name}: {own_label} {t_own:.2e} c, {ref_label} {t_ref:.2e} c"
               f" — в {t_own / t_ref:.1f} раза медленнее")
-    # TODO: объяснить, откуда постоянный множитель между своими и стандартными
-    # структурами, если асимптотика операций одинакова.
     return results
 
 
@@ -854,8 +955,6 @@ def plot_results(results: dict, out_dir: Path) -> None:
     fig2.savefig(front_path, dpi=150)
 
     print(f"\nГрафики сохранены:\n  {append_path}\n  {front_path}")
-    # TODO: в отчёте объяснить, почему у list.insert(0, x) и list.pop(0) наклон
-    # около 1, а у операций на концах deque и своего Deque — около 0.
 
 
 # ---------------------------------------------------------------------------
