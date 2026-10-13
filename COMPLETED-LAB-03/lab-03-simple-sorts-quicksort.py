@@ -15,6 +15,11 @@ import argparse
 import random
 import statistics
 import time
+import json
+import numpy as np
+import matplotlib
+matplotlib.use("Agg")          # рисуем сразу в файл, окно не нужно
+import matplotlib.pyplot as plt
 
 # ---------------------------------------------------------------------------
 # 1. Простые сортировки со счётчиками (сортируют КОПИЮ входа, вход не меняют)
@@ -229,23 +234,103 @@ def bench(fn, data: list) -> float:
     return statistics.median(times)
 
 
-def run_benchmarks(seed: int) -> None:
-    """Замеры всех алгоритмов на трёх классах входов; результат — таблица в stdout."""
+CLASSES = ["упорядоченный", "случайный", "обратный"]
+
+
+def run_benchmarks(seed: int) -> dict:
+    """Замеры всех алгоритмов на трёх классах входов.
+    Возвращает {алгоритм: {класс входа: [(n, время), ...]}}."""
     plans = [
         ("bubble_sort", ALGORITHMS["bubble_sort"], SIZES_QUADRATIC),
         ("insertion_sort", ALGORITHMS["insertion_sort"], SIZES_QUADRATIC),
         ("selection_sort", ALGORITHMS["selection_sort"], SIZES_QUADRATIC),
         ("quick_sort", lambda a: quick_sort(a, random.Random(seed)), SIZES_QUICK),
     ]
+    results = {name: {cls: [] for cls in CLASSES} for name, _, _ in plans}
     for name, fn, sizes in plans:
         print(f"\n{name}:")
         for n in sizes:
             for cls, data in make_inputs(n, seed).items():
-                print(f"  n={n:>7}  вход={cls:<13} t={bench(fn, data):.6f} c")
-    # TODO: построить log-log графики (matplotlib) по классам входов;
-    # TODO: сопоставить наклоны с O(n^2) и O(n log n), объяснить расхождения
-    #       (в т. ч. лучший случай вставок и поведение пузырька на упорядоченном входе);
-    # TODO: включить в отчёт таблицы счётчиков сравнений/обменов.
+                t = bench(fn, data)
+                results[name][cls].append((n, t))
+                print(f"  n={n:>7}  вход={cls:<13} t={t:.6f} c")
+    return results
+
+
+def run_counters(seed: int) -> dict:
+    """Счётчики простых сортировок: {алгоритм: {класс: [(n, сравнения, обмены), ...]}}."""
+    funcs = {"bubble_sort": bubble_sort, "insertion_sort": insertion_sort,
+             "selection_sort": selection_sort}
+    counters = {name: {cls: [] for cls in CLASSES} for name in funcs}
+    for name, fn in funcs.items():
+        for n in SIZES_QUADRATIC:
+            for cls, data in make_inputs(n, seed).items():
+                _, comp, moves = fn(data)
+                counters[name][cls].append((n, comp, moves))
+    return counters
+
+
+def slope(points: list) -> float:
+    """Наклон прямой в log-log осях (МНК): t ~ n^slope."""
+    xs = np.log([n for n, _ in points])
+    ys = np.log([t for _, t in points])
+    return float(np.polyfit(xs, ys, 1)[0])
+
+
+def print_slopes(results: dict) -> None:
+    print("\nНаклоны в log-log осях (МНК по всем точкам):")
+    print("| Алгоритм | " + " | ".join(CLASSES) + " |")
+    print("| --- | " + " | ".join("---" for _ in CLASSES) + " |")
+    for name, by_cls in results.items():
+        cells = " | ".join(f"{slope(by_cls[cls]):.2f}" for cls in CLASSES)
+        print(f"| {name} | {cells} |")
+
+
+def print_counter_tables(counters: dict) -> None:
+    for name, by_cls in counters.items():
+        print(f"\nСчётчики {name} (сравнения / обмены):")
+        print("| n | " + " | ".join(CLASSES) + " |")
+        print("| --- | " + " | ".join("---" for _ in CLASSES) + " |")
+        for i, (n, _, _) in enumerate(by_cls[CLASSES[0]]):
+            cells = " | ".join(f"{by_cls[cls][i][1]} / {by_cls[cls][i][2]}" for cls in CLASSES)
+            print(f"| {n} | {cells} |")
+
+
+def plot_results(results: dict, variant: int) -> None:
+    """Три графика (по классу входа), все алгоритмы, оси log-log."""
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5), sharey=True)
+    for ax, cls in zip(axes, CLASSES):
+        for name, by_cls in results.items():
+            ns, ts = zip(*by_cls[cls])
+            ax.plot(ns, ts, marker="o", label=name)
+        # опорные линии: n² через первую точку selection_sort, n log n — quick_sort
+        n0, t0 = results["selection_sort"][cls][0]
+        nq0, tq0 = results["quick_sort"][cls][0]
+        ns_sq = [n for n, _ in results["selection_sort"][cls]]
+        ns_q = [n for n, _ in results["quick_sort"][cls]]
+        ax.plot(ns_sq, [t0 * (n / n0) ** 2 for n in ns_sq], "k--", alpha=0.4, label="~ n²")
+        ax.plot(ns_q, [tq0 * (n * np.log(n)) / (nq0 * np.log(nq0)) for n in ns_q],
+                "k:", alpha=0.6, label="~ n log n")
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_title(f"Вход: {cls}")
+        ax.set_xlabel("n")
+        ax.grid(True, which="both", alpha=0.3)
+    axes[0].set_ylabel("время, с")
+    axes[0].legend()
+    fig.suptitle(f"Время сортировки от размера входа (вариант {variant}, log-log)")
+    fig.tight_layout()
+    fname = f"lab03_variant{variant}_loglog.png"
+    fig.savefig(fname, dpi=150)
+    print(f"\nГрафик сохранён: {fname}")
+
+
+def save_json(results: dict, counters: dict, variant: int) -> None:
+    fname = f"lab03_variant{variant}_results.json"
+    with open(fname, "w", encoding="utf-8") as f:
+        json.dump({"variant": variant, "time": results, "counters": counters},
+                  f, ensure_ascii=False, indent=1)
+    print(f"Результаты сохранены: {fname}")
 
 
 def main() -> None:
@@ -256,7 +341,12 @@ def main() -> None:
     random.seed(seed)
     self_check()
     stability_demo()
-    run_benchmarks(seed)
+    results = run_benchmarks(seed)
+    counters = run_counters(seed)
+    print_slopes(results)
+    print_counter_tables(counters)
+    plot_results(results, args.variant)
+    save_json(results, counters, args.variant)
 
 
 if __name__ == "__main__":
