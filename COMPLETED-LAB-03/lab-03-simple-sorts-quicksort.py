@@ -86,17 +86,33 @@ def selection_sort(a: list) -> tuple[list, int, int]:
 
 
 def quick_sort(a: list, rng: random.Random | None = None) -> list:
-    """QuickSort с выбором опорного через rng.randrange. Возвращает новый список.
-
-    Ожидаемая сложность: в среднем TODO, в худшем случае TODO (обосновать
-    в отчёте, объяснить роль рандомизации). rng передаётся снаружи, чтобы
-    запуск был воспроизводим по seed варианта.
-    """
+    """QuickSort с выбором опорного через rng.randrange.
+    Ожидаемая сложность: в среднем Θ(n log n), в худшем случае Θ(n²)."""
     if rng is None:
         rng = random.Random()
-    # TODO: реализовать (рекурсивно или циклом со стеком);
-    # TODO: опорный элемент — a[rng.randrange(lo, hi)], не первый и не последний.
-    raise NotImplementedError
+    b = a.copy()
+
+    def partition(lo, hi):
+        p = b[hi]  # опорный
+        i = lo     # граница: левее i — элементы < p
+        for j in range(lo, hi):
+            if b[j] < p:
+                b[i], b[j] = b[j], b[i]
+                i += 1
+        b[i], b[hi] = b[hi], b[i]
+        return i   # итоговое место опорного
+
+    def sort(lo, hi):
+        if lo >= hi:  # 0 или 1 элемент
+            return
+        k = rng.randrange(lo, hi + 1)
+        b[k], b[hi] = b[hi], b[k]
+        m = partition(lo, hi)
+        sort(lo, m - 1)
+        sort(m + 1, hi)
+
+    sort(0, len(b) - 1)
+    return b
 
 
 # ---------------------------------------------------------------------------
