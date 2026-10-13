@@ -9,6 +9,7 @@
 Запуск: python lab03-simple-sorts-quicksort-starter.py --variant N
 """
 from __future__ import annotations
+from dataclasses import dataclass, field
 
 import argparse
 import random
@@ -120,16 +121,29 @@ def quick_sort(a: list, rng: random.Random | None = None) -> list:
 # ---------------------------------------------------------------------------
 
 
-def stability_demo() -> None:
-    """Показать, какие из четырёх сортировок стабильны.
+@dataclass(order=True)
+class Pair:
+    key: int
+    label: str = field(compare=False)   # метка в сравнении не участвует
 
-    План: взять массив пар (ключ, метка) с повторяющимися ключами, например
-    [(2, "a"), (1, "b"), (2, "c"), (1, "d")], отсортировать каждой сортировкой
-    по ключу (сравнение только по p[0]!) и напечатать порядок меток при равных
-    ключах. Вывод о стабильности каждой сортировки включить в отчёт.
-    """
-    # TODO: подготовить пары, прогнать все четыре сортировки, напечатать итог
-    raise NotImplementedError
+
+def stability_demo() -> None:
+    src = [Pair(2, "a"), Pair(1, "b"), Pair(2, "c"), Pair(1, "d")]
+    algos = {
+        "bubble_sort": lambda a: bubble_sort(a)[0],
+        "insertion_sort": lambda a: insertion_sort(a)[0],
+        "selection_sort": lambda a: selection_sort(a)[0],
+        "quick_sort": lambda a: quick_sort(a, random.Random(0)),
+    }
+    print("\nСтабильность (порядок меток при равных ключах)")
+    print("вход:", [(p.key, p.label) for p in src])
+    for name, fn in algos.items():
+        res = fn(src)
+        # метки с ключом 1 и 2 в исходном порядке: b,d и a,c
+        stable = ([p.label for p in res if p.key == 1] == ["b", "d"]
+                  and [p.label for p in res if p.key == 2] == ["a", "c"])
+        print(f"  {name:<15}", [(p.key, p.label) for p in res],
+              "-> стабильна" if stable else "-> НЕстабильна")
 
 
 # ---------------------------------------------------------------------------
