@@ -23,25 +23,61 @@ import time
 
 
 def bubble_sort(a: list) -> tuple[list, int, int]:
-    """Сортировка пузырьком. Ожидаемая сложность: TODO (обосновать в отчёте).
-
-    Подсказка: досрочный выход, если за проход не было ни одного обмена, —
-    именно он даёт лучший случай на упорядоченном входе.
-    """
-    # TODO: реализовать; считать сравнения и обмены
-    raise NotImplementedError
+    """Сортировка пузырьком. Ожидаемая сложность: Θ(n²). В лучшем случае: Θ(n)."""
+    comp = 0
+    exch = 0
+    a = a.copy()
+    n = len(a)
+    for i in range(n - 1):
+        swapped = False
+        for j in range(n - 1 - i):
+            comp += 1
+            if a[j] > a[j + 1]:
+                a[j], a[j + 1] = a[j + 1], a[j]
+                exch += 1
+                swapped = True
+        if not swapped:
+            break
+    return a, comp, exch
 
 
 def insertion_sort(a: list) -> tuple[list, int, int]:
-    """Сортировка вставками. Ожидаемая сложность: TODO (лучший/худший случаи)."""
-    # TODO: реализовать; считать сравнения и перемещения (сдвиги)
-    raise NotImplementedError
+    """Сортировка вставками. Ожидаемая сложность: Θ(n²). В лучшем случае: Θ(n)."""
+    comp = 0
+    shft = 0
+    a = a.copy()
+    n = len(a)
+    for i in range(1, n):
+        x = a[i]
+        j = i - 1
+        while j >= 0:
+            comp += 1
+            if a[j] > x:
+                a[j + 1] = a[j]
+                shft += 1
+                j -= 1
+            else:
+                break
+        a[j + 1] = x
+    return a, comp, shft
 
 
 def selection_sort(a: list) -> tuple[list, int, int]:
-    """Сортировка выбором. Ожидаемая сложность: TODO (почему не зависит от входа?)."""
-    # TODO: реализовать; считать сравнения и обмены
-    raise NotImplementedError
+    """Сортировка выбором. Ожидаемая сложность: Θ(n²) — в любом случае."""
+    comp = 0
+    exch = 0
+    a = a.copy()
+    n = len(a)
+    for i in range(n - 1):
+        m = i
+        for j in range(i + 1, n):
+            comp += 1
+            if a[m] > a[j]:
+                m = j
+        if i != m:
+            a[i], a[m] = a[m], a[i]
+            exch += 1
+    return a, comp, exch
 
 
 # ---------------------------------------------------------------------------
