@@ -17,6 +17,7 @@ import statistics
 import sys
 import time
 import traceback
+import tracemalloc
 
 # ---------------------------------------------------------------------------
 # 1. Сортировки (реализуются вручную; sorted() используется только как эталон)
@@ -56,15 +57,29 @@ def merge_sort(a: list, key=lambda x: x) -> list:
     return merge(merge_sort(a[:mid], key), merge_sort(a[mid:], key), key)
 
 
-def counting_sort(a: list[int], key_max: int) -> list[int]:
+def counting_sort(a: list, key_max: int, key=lambda x: x) -> list:
     """Устойчивая сортировка подсчётом: ключи — целые из диапазона [0, key_max].
 
     Схема: массив счётчиков -> префиксные суммы -> расстановка с конца.
-    Ожидаемые время и память: TODO — выразить через n и k = key_max + 1;
-    ограничение диапазона ключей обсудить в отчёте.
+    Сложность: время Θ(n + k), доп. память Θ(n + k), где k = key_max + 1.
     """
-    # TODO: реализовать; проход расстановки — с конца массива (иначе теряется устойчивость)
-    raise NotImplementedError
+    keys = [key(x) for x in a]
+    if keys and (min(keys) < 0 or max(keys) > key_max):
+        # отрицательный ключ иначе молча попал бы в count[-1] — конец массива
+        raise ValueError(f"ключи должны лежать в [0, {key_max}]")
+    count = [0] * (key_max + 1)
+    for k in keys:
+        count[k] += 1
+    # префиксные суммы: count[v] = число элементов с ключом <= v,
+    # то есть позиция, ПОСЛЕ которой заканчивается блок ключа v
+    for v in range(1, key_max + 1):
+        count[v] += count[v - 1]
+    res = [None] * len(a)
+    # с конца: последний из равных встаёт в конец своего блока — порядок равных сохранён
+    for i in range(len(a) - 1, -1, -1):
+        count[keys[i]] -= 1
+        res[count[keys[i]]] = a[i]
+    return res
 
 
 def radix_sort_lsd(a: list[int]) -> list[int]:
@@ -160,8 +175,8 @@ def check_sort(fn) -> None:
         expect(res == sorted(a), f"расходится с sorted() на {a}: получено {res}")
 
 
-def check_merge_stability() -> None:
-    """Стабильность слияния на парах (ключ, порядковый номер).
+def check_stability(sort_by_key) -> None:
+    """Стабильность на парах (ключ, порядковый номер); sort_by_key(pairs, key) -> list.
 
     Ключи из узкого диапазона [0, 5] — равных ключей много. Две независимые проверки:
     1) соседние пары: ключ растёт, либо ключ равен и номер растёт (порядок входа
@@ -171,15 +186,15 @@ def check_merge_stability() -> None:
     rng = random.Random(0)
     for _ in range(200):
         pairs = [(rng.randint(0, 5), i) for i in range(rng.randint(0, 100))]
-        got = merge_sort(pairs, key=lambda p: p[0])
+        got = sort_by_key(pairs, lambda p: p[0])
         for prev, cur in zip(got, got[1:]):
             expect(
                 prev[0] < cur[0] or (prev[0] == cur[0] and prev[1] < cur[1]),
-                f"merge_sort нестабилен: {prev} стоит перед {cur}",
+                f"сортировка нестабильна: {prev} стоит перед {cur}",
             )
         expect(
             got == sorted(pairs, key=lambda p: p[0]),
-            "merge_sort нестабилен: при равных ключах нарушен исходный порядок номеров",
+            "сортировка нестабильна: при равных ключах нарушен порядок номеров",
         )
 
 
@@ -200,7 +215,18 @@ def self_check() -> None:
     """Все проверки по разделам; при любой ошибке замеры не выполняются."""
     # fn=fn фиксирует функцию текущего шага цикла (иначе все лямбды увидят последнюю)
     checks = [(name, lambda fn=fn: check_sort(fn)) for name, fn in SORTS.items()]
-    checks.append(("стабильность merge_sort", check_merge_stability))
+    checks.append(
+        (
+            "стабильность merge_sort",
+            lambda: check_stability(lambda p, key: merge_sort(p, key=key)),
+        )
+    )
+    checks.append(
+        (
+            "стабильность counting_sort",
+            lambda: check_stability(lambda p, key: counting_sort(p, 5, key=key)),
+        )
+    )
     failed = 0
     print("self_check:")
     for name, check in checks:
@@ -270,6 +296,30 @@ def bench(fn, data: list[int]) -> float:
     return statistics.median(times)
 
 
+COUNTING_N = 10_000
+COUNTING_KS = [10**2, 10**3, 10**4, 10**5, 10**6, 10**7]
+
+
+def counting_range_experiment(seed: int) -> None:
+    """counting_sort при фиксированном n и растущем k = key_max + 1: время и память."""
+    rng = random.Random(seed)
+    print(f"\ncounting_sort и диапазон ключей (n = {COUNTING_N}):")
+    print(
+        f"  {'k':>10} {'counting, c':>12} {'merge, c':>10} {'sorted(), c':>12}"
+        f" {'пик памяти counting, МБ':>24}"
+    )
+    for k in COUNTING_KS:
+        data = [rng.randrange(k) for _ in range(COUNTING_N)]
+        t_cnt = bench(lambda a, k=k: counting_sort(a, key_max=k - 1), data)
+        t_mrg = bench(merge_sort, data)
+        t_ref = bench(sorted, data)
+        tracemalloc.start()  # отдельный запуск: трассировка замедляет код
+        counting_sort(data, key_max=k - 1)
+        peak = tracemalloc.get_traced_memory()[1] / 2**20
+        tracemalloc.stop()
+        print(f"  {k:>10} {t_cnt:>12.6f} {t_mrg:>10.6f} {t_ref:>12.6f} {peak:>24.1f}")
+
+
 def run_benchmarks(seed: int) -> None:
     rng = random.Random(seed)
     algorithms = [
@@ -306,6 +356,7 @@ def main() -> None:
     random.seed(seed)
     self_check()
     merge_stability_demo()
+    counting_range_experiment(seed)
     run_benchmarks(seed)
 
 
