@@ -82,16 +82,24 @@ def counting_sort(a: list, key_max: int, key=lambda x: x) -> list:
     return res
 
 
-def radix_sort_lsd(a: list[int]) -> list[int]:
+def radix_sort_lsd(a: list[int], digit_sort=counting_sort) -> list[int]:
     """RadixSort LSD по десятичным разрядам, неотрицательные целые.
 
     Поверх устойчивой поразрядной counting-сортировки: от младшего разряда
-    к старшему. Ожидаемая сложность: TODO — выразить через n и число разрядов d.
+    к старшему. digit_sort(a, key_max, key) сортирует по одной цифре; подмена
+    нужна только для демонстрации неустойчивого прохода.
+    Сложность: время Θ(d·(n + 10)), доп. память Θ(n), d — число цифр максимума.
     """
-    # TODO: цикл по разрядам (exp = 1, 10, 100, ...) с устойчивой сортировкой
-    # по цифре (a[i] // exp) % 10; объяснить, почему без устойчивости
-    # внутреннего прохода алгоритм неверен
-    raise NotImplementedError
+    if a and min(a) < 0:
+        raise ValueError("radix_sort_lsd работает только с неотрицательными целыми")
+    res = list(a)
+    largest = max(a, default=0)
+    exp = 1
+    while largest // exp > 0:
+        # exp=exp фиксирует разряд текущего шага в лямбде
+        res = digit_sort(res, 9, key=lambda x, exp=exp: (x // exp) % 10)
+        exp *= 10
+    return res
 
 
 def sift_down(a: list[int], i: int, n: int) -> None:
@@ -198,6 +206,60 @@ def check_stability(sort_by_key) -> None:
         )
 
 
+def check_digit_pass_stability() -> None:
+    """Поразрядный проход radix (counting_sort по цифре) устойчив на каждом разряде.
+
+    Целые с равной цифрой различимы, поэтому эталон — стабильный sorted() по цифре.
+    """
+    rng = random.Random(0)
+    for _ in range(100):
+        a = [rng.randint(0, 99_999) for _ in range(rng.randint(0, 100))]
+        for exp in (1, 10, 100, 1_000, 10_000):
+
+            def digit(x, exp=exp):
+                return (x // exp) % 10
+
+            expect(
+                counting_sort(a, 9, key=digit) == sorted(a, key=digit),
+                f"поразрядный проход неустойчив: разряд {exp}, вход {a}",
+            )
+
+
+def counting_sort_unstable(a: list, key_max: int, key=lambda x: x) -> list:
+    """Для демонстрации: counting_sort с расстановкой с НАЧАЛА — равные переворачиваются."""
+    keys = [key(x) for x in a]
+    count = [0] * (key_max + 1)
+    for k in keys:
+        count[k] += 1
+    for v in range(1, key_max + 1):
+        count[v] += count[v - 1]
+    res = [None] * len(a)
+    for i, k in enumerate(keys):
+        count[k] -= 1
+        res[count[k]] = a[i]
+    return res
+
+
+def radix_stability_demo() -> None:
+    """Проходы radix по разрядам с устойчивым и неустойчивым внутренним проходом."""
+    src = [53, 31, 12, 35, 14, 52]
+    print("\nRadixSort LSD: устойчивый и неустойчивый поразрядный проход")
+    print("  вход:", src)
+    for name, digit_sort in (
+        ("устойчивый", counting_sort),
+        ("неустойчивый", counting_sort_unstable),
+    ):
+
+        def traced(a, key_max, key, digit_sort=digit_sort, name=name):
+            res = digit_sort(a, key_max, key=key)
+            print(f"  {name:>12}, после прохода: {res}")
+            return res
+
+        res = radix_sort_lsd(src, digit_sort=traced)
+        verdict = "верно" if res == sorted(src) else "НЕВЕРНО"
+        print(f"  {name:>12}: итог {verdict}")
+
+
 def merge_stability_demo() -> None:
     """Наглядно: порядок номеров при равных ключах после merge_sort."""
     src = [(2, 0), (1, 1), (2, 2), (0, 3), (1, 4), (2, 5), (0, 6), (1, 7)]
@@ -227,6 +289,7 @@ def self_check() -> None:
             lambda: check_stability(lambda p, key: counting_sort(p, 5, key=key)),
         )
     )
+    checks.append(("поразрядный проход radix", check_digit_pass_stability))
     failed = 0
     print("self_check:")
     for name, check in checks:
@@ -357,6 +420,7 @@ def main() -> None:
     self_check()
     merge_stability_demo()
     counting_range_experiment(seed)
+    radix_stability_demo()
     run_benchmarks(seed)
 
 
