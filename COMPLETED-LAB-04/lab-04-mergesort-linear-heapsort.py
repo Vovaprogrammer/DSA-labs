@@ -103,19 +103,45 @@ def radix_sort_lsd(a: list[int], digit_sort=counting_sort) -> list[int]:
 
 
 def sift_down(a: list[int], i: int, n: int) -> None:
-    """Просейка вниз элемента i в куче a[0:n] (max-heap), на месте."""
-    # TODO: спуск с обменом с большим из потомков, пока нарушено свойство кучи
-    raise NotImplementedError
+    """Просейка вниз элемента i в куче a[0:n] (max-heap), на месте.
+
+    Сложность: O(h), h — высота поддерева узла i (не больше log₂ n).
+    """
+    while True:
+        largest = i
+        left, right = 2 * i + 1, 2 * i + 2  # потомки узла i в массиве
+        if left < n and a[left] > a[largest]:
+            largest = left
+        if right < n and a[right] > a[largest]:
+            largest = right
+        if largest == i:  # узел не меньше потомков — свойство кучи выполнено
+            return
+        a[i], a[largest] = a[largest], a[i]
+        i = largest
+
+
+def build_max_heap(a: list[int]) -> None:
+    """Построение max-кучи на месте: просейки от последнего внутреннего узла к корню.
+
+    Сложность: O(n) — большинство узлов низко и просеиваются на малую высоту.
+    """
+    n = len(a)
+    for i in range(n // 2 - 1, -1, -1):  # узлы n//2 .. n-1 — листья, они уже кучи
+        sift_down(a, i, n)
 
 
 def heap_sort(a: list[int]) -> None:
     """HeapSort in-place: сортирует список a на месте, без вспомогательного массива.
 
     Схема: построение max-кучи просейками вниз (снизу вверх, O(n)),
-    затем обмен вершины с последним элементом и просейка. Сложность: TODO.
+    затем обмен вершины с последним элементом и просейка.
+    Сложность: Θ(n log n) в среднем и худшем случае; доп. память O(1).
     """
-    # TODO: построение кучи + фаза извлечения максимумов
-    raise NotImplementedError
+    build_max_heap(a)
+    for end in range(len(a) - 1, 0, -1):
+        # максимум кучи a[0:end+1] уходит в конец, куча сокращается на 1
+        a[0], a[end] = a[end], a[0]
+        sift_down(a, 0, end)
 
 
 def quick_sort(a: list[int]) -> list[int]:
@@ -225,6 +251,30 @@ def check_digit_pass_stability() -> None:
             )
 
 
+def check_heap() -> None:
+    """Свойство кучи после build_max_heap и сортировка heap_sort на месте.
+
+    1) a[i] >= обоих потомков для каждого внутреннего узла, куча — перестановка входа;
+    2) heap_sort возвращает None и сортирует тот же объект списка (in-place).
+    """
+    rng = random.Random(0)
+    for _ in range(200):
+        a = [rng.randint(0, 50) for _ in range(rng.randint(0, 100))]
+        heap = list(a)
+        build_max_heap(heap)
+        expect(sorted(heap) == sorted(a), f"куча — не перестановка входа {a}")
+        for i in range(len(heap) // 2):
+            for child in (2 * i + 1, 2 * i + 2):
+                expect(
+                    child >= len(heap) or heap[i] >= heap[child],
+                    f"свойство кучи нарушено: heap[{i}] < heap[{child}] в {heap}",
+                )
+        buf = list(a)
+        ident = id(buf)
+        expect(heap_sort(buf) is None, "heap_sort должен сортировать на месте")
+        expect(id(buf) == ident and buf == sorted(a), f"heap_sort на месте: {a}")
+
+
 def counting_sort_unstable(a: list, key_max: int, key=lambda x: x) -> list:
     """Для демонстрации: counting_sort с расстановкой с НАЧАЛА — равные переворачиваются."""
     keys = [key(x) for x in a]
@@ -290,6 +340,7 @@ def self_check() -> None:
         )
     )
     checks.append(("поразрядный проход radix", check_digit_pass_stability))
+    checks.append(("свойство кучи и in-place heap_sort", check_heap))
     failed = 0
     print("self_check:")
     for name, check in checks:
@@ -308,8 +359,6 @@ def self_check() -> None:
             failed += 1
         else:
             print(f"  {name}: OK")
-    # TODO: добавить собственные проверки (свойство кучи после построения,
-    #       устойчивость поразрядного прохода radix) и описать их в отчёте.
     if failed:
         raise SystemExit(
             f"self_check: не пройдено разделов — {failed}; "
