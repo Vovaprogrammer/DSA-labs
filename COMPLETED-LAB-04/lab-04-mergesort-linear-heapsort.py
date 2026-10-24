@@ -12,12 +12,19 @@
 from __future__ import annotations
 
 import argparse
+import json
 import random
 import statistics
 import sys
 import time
 import traceback
 import tracemalloc
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+plt.switch_backend("Agg")  # рисуем сразу в файл, окно не нужно
 
 # ---------------------------------------------------------------------------
 # 1. Сортировки (реализуются вручную; sorted() используется только как эталон)
@@ -144,10 +151,33 @@ def heap_sort(a: list[int]) -> None:
         sift_down(a, 0, end)
 
 
-def quick_sort(a: list[int]) -> list[int]:
-    """QuickSort с рандомизацией опорного элемента — перенести из своей ЛР 3."""
-    # TODO: скопировать собственную реализацию из ЛР 3 (КИМ-03)
-    raise NotImplementedError
+def quick_sort(a: list, rng: random.Random | None = None) -> list:
+    """QuickSort с выбором опорного через rng.randrange и трёхсторонним разбиением.
+    Ожидаемая сложность: в среднем Θ(n log n), в худшем случае Θ(n²). (из ЛР 3)"""
+    if rng is None:
+        rng = random.Random()
+    b = a.copy()
+
+    def sort(lo, hi):
+        if lo >= hi:  # 0 или 1 элемент
+            return
+        p = b[rng.randrange(lo, hi + 1)]  # опорное значение
+        lt, i, gt = lo, lo, hi  # [lo, lt) < p, [lt, i) == p, (gt, hi] > p
+        while i <= gt:
+            if b[i] < p:
+                b[lt], b[i] = b[i], b[lt]
+                lt += 1
+                i += 1
+            elif b[i] > p:
+                b[i], b[gt] = b[gt], b[i]
+                gt -= 1
+            else:
+                i += 1
+        sort(lo, lt - 1)
+        sort(gt + 1, hi)
+
+    sort(0, len(b) - 1)
+    return b
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +209,7 @@ SORTS = {
     "counting_sort": lambda a: counting_sort(a, key_max=999),
     "radix_sort_lsd": lambda a: radix_sort_lsd(a),
     "heap_sort": lambda a: heap_sorted(a),
-    "quick_sort": lambda a: quick_sort(a),
+    "quick_sort": lambda a: quick_sort(a, random.Random(0)),
 }
 
 
@@ -432,16 +462,26 @@ def counting_range_experiment(seed: int) -> None:
         print(f"  {k:>10} {t_cnt:>12.6f} {t_mrg:>10.6f} {t_ref:>12.6f} {peak:>24.1f}")
 
 
-def run_benchmarks(seed: int) -> None:
+DISTRIBUTIONS = ["random_wide", "random_small", "sorted", "reversed", "almost_sorted"]
+PLOTS_DIR = Path(__file__).resolve().parent / "plots"
+
+
+def run_benchmarks(seed: int) -> dict:
+    """Замеры всех шести сортировок на всех распределениях и размерах.
+
+    Возвращает {распределение: {алгоритм: [(n, время), ...]}}.
+    """
     rng = random.Random(seed)
     algorithms = [
         ("merge_sort", merge_sort),
         ("counting_sort", lambda a: counting_sort(a, key_max=max(a, default=0))),
         ("radix_sort_lsd", radix_sort_lsd),
         ("heap_sort", heap_sort),
-        ("quick_sort (ЛР 3)", quick_sort),
+        # свой генератор от seed: замеры QuickSort воспроизводимы
+        ("quick_sort (ЛР 3)", lambda a: quick_sort(a, random.Random(seed))),
         ("sorted() (эталон)", sorted),
     ]
+    results = {d: {name: [] for name, _ in algorithms} for d in DISTRIBUTIONS}
     for n in SIZES:
         datasets = make_datasets(rng, n)
         print(f"\nn = {n}:")
@@ -453,14 +493,102 @@ def run_benchmarks(seed: int) -> None:
                     # применимости counting; зафиксировать в таблице свойств
                     print(f"    {algo_name:>18}: пропуск (диапазон ключей)")
                     continue
-                print(f"    {algo_name:>18}: t = {bench(fn, data):.6f} c")
-    # TODO: построить log-log графики (matplotlib) по каждому распределению;
-    # TODO: заполнить таблицу свойств: время (лучший/средний/худший),
-    #       память, стабильность, ограничения — для всех шести сортировок;
-    # TODO: объяснить расхождения замеров с асимптотикой в отчёте.
+                t = bench(fn, data)
+                results[dist_name][algo_name].append((n, t))
+                print(f"    {algo_name:>18}: t = {t:.6f} c")
+    return results
+
+
+def slope(points: list) -> float:
+    """Наклон прямой в log-log осях (МНК): t ~ n^slope."""
+    xs = np.log([n for n, _ in points])
+    ys = np.log([t for _, t in points])
+    return float(np.polyfit(xs, ys, 1)[0])
+
+
+def print_tables(results: dict) -> None:
+    """Таблицы (Markdown): время при максимальном n и наклоны log-log."""
+    algos = list(results[DISTRIBUTIONS[0]])
+    for title, cell in (
+        (f"Время при n = {SIZES[-1]}, с", lambda pts: f"{pts[-1][1]:.4f}"),
+        (
+            "Наклоны в log-log осях (МНК по всем точкам)",
+            lambda pts: f"{slope(pts):.2f}",
+        ),
+    ):
+        print(f"\n{title}:")
+        print("| Алгоритм | " + " | ".join(DISTRIBUTIONS) + " |")
+        print("| --- |" + " --- |" * len(DISTRIBUTIONS))
+        for algo in algos:
+            cells = [
+                cell(results[d][algo]) if results[d][algo] else "—"
+                for d in DISTRIBUTIONS
+            ]
+            print(f"| {algo} | " + " | ".join(cells) + " |")
+
+
+def plot_results(results: dict, variant: int) -> None:
+    """По графику на распределение, все алгоритмы, оси log-log."""
+    fig, axes = plt.subplots(2, 3, figsize=(17, 9), sharex=True, sharey=True)
+    # цвет закреплён за алгоритмом: на random_wide counting пропущен, и без этого
+    # цвета остальных линий на этой панели сдвинулись бы
+    colors = dict(
+        zip(
+            results[DISTRIBUTIONS[0]], plt.rcParams["axes.prop_cycle"].by_key()["color"]
+        )
+    )
+    for ax, dist in zip(axes.flat, DISTRIBUTIONS):
+        for algo, pts in results[dist].items():
+            if pts:
+                ns, ts = zip(*pts)
+                ax.plot(ns, ts, marker="o", color=colors[algo], label=algo)
+        # опорные линии через первую точку merge_sort: ~ n и ~ n log n
+        n0, t0 = results[dist]["merge_sort"][0]
+        ns = [n for n, _ in results[dist]["merge_sort"]]
+        ax.plot(ns, [t0 * n / n0 for n in ns], "k:", alpha=0.5, label="~ n")
+        ax.plot(
+            ns,
+            [t0 * n * np.log(n) / (n0 * np.log(n0)) for n in ns],
+            "k--",
+            alpha=0.5,
+            label="~ n log n",
+        )
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_title(dist)
+        ax.grid(True, which="both", alpha=0.3)
+    for ax in axes[1]:
+        ax.set_xlabel("n")
+    for ax in axes[:, 0]:
+        ax.set_ylabel("время, с")
+    axes.flat[-1].axis("off")
+    axes.flat[-1].legend(  # легенда с панели random_small — там все шесть алгоритмов
+        *axes.flat[1].get_legend_handles_labels(), loc="center", fontsize=12
+    )
+    fig.suptitle(f"Время сортировки от размера входа (вариант {variant}, log-log)")
+    fig.tight_layout()
+    PLOTS_DIR.mkdir(exist_ok=True)
+    fname = PLOTS_DIR / f"lab04_variant{variant}_loglog.png"
+    fig.savefig(fname, dpi=150)
+    print(f"\nГрафик сохранён: {fname}")
+
+
+def save_json(results: dict, variant: int) -> None:
+    """Сохранить результаты замеров в JSON."""
+    PLOTS_DIR.mkdir(exist_ok=True)
+    fname = PLOTS_DIR / f"lab04_variant{variant}_results.json"
+    with open(fname, "w", encoding="utf-8") as f:
+        json.dump(
+            {"variant": variant, "sizes": SIZES, "repeats": REPEATS, "time": results},
+            f,
+            ensure_ascii=False,
+            indent=1,
+        )
+    print(f"Результаты сохранены: {fname}")
 
 
 def main() -> None:
+    """Самопроверка, демонстрации, эксперимент с k, бенчмарк, таблицы и график."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--variant", type=int, required=True, help="номер варианта")
     args = ap.parse_args()
@@ -470,7 +598,10 @@ def main() -> None:
     merge_stability_demo()
     counting_range_experiment(seed)
     radix_stability_demo()
-    run_benchmarks(seed)
+    results = run_benchmarks(seed)
+    print_tables(results)
+    plot_results(results, args.variant)
+    save_json(results, args.variant)
 
 
 if __name__ == "__main__":
