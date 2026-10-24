@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""ЛР 4. MergeSort, Counting, Radix и HeapSort: оценка производительности — стартовая заготовка.
+"""ЛР 4. MergeSort, Counting, Radix и HeapSort: оценка производительности.
 
-Заготовка — это каркас, а не решение: заполните все TODO самостоятельно
-в соответствии с КИМ-04 и правилами использования генеративного ИИ
-(docs/ai-verification.md). QuickSort перенесите из собственной ЛР 3.
+Реализовано: MergeSort со стабильным слиянием, устойчивая CountingSort
+с префиксными суммами, RadixSort LSD поверх поразрядной counting-сортировки,
+HeapSort in-place через sift_down; QuickSort перенесён из ЛР 3.
+Самопроверка (инварианты, стабильность, свойство кучи, сверка с sorted()),
+демонстрации стабильности, эксперимент с диапазоном ключей counting,
+бенчмарк шести сортировок с log-log графиком и JSON.
 
-Запуск: python lab04-mergesort-linear-heapsort-starter.py --variant N
+Запуск: python COMPLETED-LAB-04/lab-04-mergesort-linear-heapsort.py --variant 14
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ import sys
 import time
 import traceback
 import tracemalloc
+from collections import Counter
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -205,38 +209,68 @@ def heap_sorted(a: list[int]) -> list[int]:
 
 # Каждая функция возвращает отсортированный список; ключи — целые из [0, 999].
 SORTS = {
-    "merge_sort": lambda a: merge_sort(a),
+    "merge_sort": merge_sort,
     "counting_sort": lambda a: counting_sort(a, key_max=999),
-    "radix_sort_lsd": lambda a: radix_sort_lsd(a),
-    "heap_sort": lambda a: heap_sorted(a),
+    "radix_sort_lsd": radix_sort_lsd,
+    "heap_sort": heap_sorted,
     "quick_sort": lambda a: quick_sort(a, random.Random(0)),
 }
 
 
+def is_sorted(a: list) -> bool:
+    """Инвариант: соседние элементы идут в неубывающем порядке."""
+    return all(a[i] <= a[i + 1] for i in range(len(a) - 1))
+
+
 def check_sort(fn) -> None:
-    """Граничные случаи, инварианты сортировки и сверка с эталоном sorted()."""
+    """Инварианты сортировки и сверка с эталоном sorted().
+
+    Инварианты: выход упорядочен, выход — перестановка входа (Counter),
+    входной список не изменён. Входы: граничные и вырожденные, 300 случайных
+    коротких массивов с дубликатами и 5 массивов по 5000 элементов.
+    """
     boundary = [
         [],  # пустой массив
         [7],  # один элемент
         [0],  # нулевой ключ
+        [999],  # максимальный ключ
+        [2, 1],  # два элемента
+        [1, 2],
         [5, 5, 5],  # все элементы равны
         [1, 2, 3, 4, 5],  # уже отсортирован
         [5, 4, 3, 2, 1],  # обратный порядок
+        [999, 0, 999, 0],  # крайние ключи с дубликатами
+        [100, 9, 999, 10, 0, 99, 1],  # разное число разрядов (radix)
     ]
-    for a in boundary:
-        res = fn(list(a))
-        expect(
-            isinstance(res, list), f"на {a} возвращён {type(res).__name__}, а не список"
-        )
-        expect(res == sorted(a), f"на {a} получено {res}, ожидалось {sorted(a)}")
-
-    # Случайные тесты: инвариант перестановки + сверка с эталоном
     rng = random.Random(0)
-    for _ in range(200):
-        a = [rng.randint(0, 999) for _ in range(rng.randint(0, 60))]
-        res = fn(list(a))
-        expect(sorted(res) == sorted(a), f"не перестановка входа {a}: получено {res}")
-        expect(res == sorted(a), f"расходится с sorted() на {a}: получено {res}")
+    randoms = [
+        [rng.randint(0, 999) for _ in range(rng.randint(0, 60))] for _ in range(300)
+    ]
+    randoms += [[rng.randint(0, 999) for _ in range(5000)] for _ in range(5)]
+    for a in boundary + randoms:
+        orig = list(a)
+        show = orig if len(orig) <= 20 else f"массиве из {len(orig)} элементов"
+        res = fn(a)
+        expect(isinstance(res, list), f"на {show} возвращён не список")
+        expect(a == orig, f"изменён входной список на {show}")
+        expect(is_sorted(res), f"нарушен порядок на {show}")
+        expect(Counter(res) == Counter(orig), f"не перестановка входа на {show}")
+        expect(res == sorted(orig), f"расходится с sorted() на {show}")
+
+
+def check_key_errors() -> None:
+    """Недопустимые ключи дают ValueError, а не молча неверный результат."""
+    bad_calls = (
+        ("counting_sort, отрицательный ключ", lambda: counting_sort([3, -1], 5)),
+        ("counting_sort, ключ больше key_max", lambda: counting_sort([3, 6], 5)),
+        ("radix_sort_lsd, отрицательное число", lambda: radix_sort_lsd([3, -1])),
+    )
+    for name, call in bad_calls:
+        try:
+            call()
+        except ValueError:
+            continue
+        raise SelfCheckError(f"{name}: ожидался ValueError")
 
 
 def check_stability(sort_by_key) -> None:
@@ -371,6 +405,7 @@ def self_check() -> None:
     )
     checks.append(("поразрядный проход radix", check_digit_pass_stability))
     checks.append(("свойство кучи и in-place heap_sort", check_heap))
+    checks.append(("недопустимые ключи counting/radix", check_key_errors))
     failed = 0
     print("self_check:")
     for name, check in checks:
@@ -383,7 +418,8 @@ def self_check() -> None:
         except SelfCheckError as err:
             print(f"  {name}: ОШИБКА — {err}")
             failed += 1
-        except Exception:  # noqa: BLE001 — падение реализации тоже результат проверки
+        # падение реализации тоже результат проверки, поэтому ловится любое исключение
+        except Exception:  # pylint: disable=broad-exception-caught
             print(f"  {name}: ИСКЛЮЧЕНИЕ")
             traceback.print_exc(file=sys.stdout)
             failed += 1
