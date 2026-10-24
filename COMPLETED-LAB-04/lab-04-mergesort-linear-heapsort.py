@@ -8,6 +8,7 @@
 
 Запуск: python lab04-mergesort-linear-heapsort-starter.py --variant N
 """
+
 from __future__ import annotations
 
 import argparse
@@ -26,16 +27,33 @@ def merge(left: list, right: list, key) -> list:
     """Стабильное слияние двух отсортированных списков в новый список.
 
     Стабильность: при равенстве ключей элемент из left идёт раньше.
-    Ожидаемая сложность: TODO (обосновать в отчёте).
+    Сложность: Θ(len(left) + len(right)) по времени и по доп. памяти.
     """
-    # TODO: два индекса, сравнение key(left[i]) <= key(right[j])
-    raise NotImplementedError
+    res = []
+    i = j = 0
+    while i < len(left) and j < len(right):
+        # именно <=, а не <: при равных ключах первым берётся элемент из left
+        if key(left[i]) <= key(right[j]):
+            res.append(left[i])
+            i += 1
+        else:
+            res.append(right[j])
+            j += 1
+    # одна из половин закончилась — хвост другой уже упорядочен
+    res.extend(left[i:])
+    res.extend(right[j:])
+    return res
 
 
 def merge_sort(a: list, key=lambda x: x) -> list:
-    """MergeSort: возвращает новый отсортированный список. Ожидаемая сложность: TODO."""
-    # TODO: рекурсивное деление пополам + merge()
-    raise NotImplementedError
+    """MergeSort: возвращает новый отсортированный список, вход не меняется.
+
+    Сложность: Θ(n log n) в любом случае; доп. память Θ(n).
+    """
+    if len(a) <= 1:
+        return list(a)  # копия: результат не должен быть тем же объектом, что вход
+    mid = len(a) // 2
+    return merge(merge_sort(a[:mid], key), merge_sort(a[mid:], key), key)
 
 
 def counting_sort(a: list[int], key_max: int) -> list[int]:
@@ -119,16 +137,18 @@ SORTS = {
 def check_sort(fn) -> None:
     """Граничные случаи, инварианты сортировки и сверка с эталоном sorted()."""
     boundary = [
-        [],                    # пустой массив
-        [7],                   # один элемент
-        [0],                   # нулевой ключ
-        [5, 5, 5],             # все элементы равны
-        [1, 2, 3, 4, 5],       # уже отсортирован
-        [5, 4, 3, 2, 1],       # обратный порядок
+        [],  # пустой массив
+        [7],  # один элемент
+        [0],  # нулевой ключ
+        [5, 5, 5],  # все элементы равны
+        [1, 2, 3, 4, 5],  # уже отсортирован
+        [5, 4, 3, 2, 1],  # обратный порядок
     ]
     for a in boundary:
         res = fn(list(a))
-        expect(isinstance(res, list), f"на {a} возвращён {type(res).__name__}, а не список")
+        expect(
+            isinstance(res, list), f"на {a} возвращён {type(res).__name__}, а не список"
+        )
         expect(res == sorted(a), f"на {a} получено {res}, ожидалось {sorted(a)}")
 
     # Случайные тесты: инвариант перестановки + сверка с эталоном
@@ -141,13 +161,39 @@ def check_sort(fn) -> None:
 
 
 def check_merge_stability() -> None:
-    """Стабильность слияния на парах (ключ, порядковый номер): эталон sorted() стабилен,
-    поэтому при равных ключах порядок номеров обязан совпасть."""
+    """Стабильность слияния на парах (ключ, порядковый номер).
+
+    Ключи из узкого диапазона [0, 5] — равных ключей много. Две независимые проверки:
+    1) соседние пары: ключ растёт, либо ключ равен и номер растёт (порядок входа
+       сохранён) — не опирается на эталон;
+    2) совпадение с sorted(): эталон стабилен, поэтому порядок номеров обязан совпасть.
+    """
     rng = random.Random(0)
-    pairs = [(rng.randint(0, 5), i) for i in range(100)]
-    got = merge_sort(pairs, key=lambda p: p[0])
-    expect(got == sorted(pairs, key=lambda p: p[0]),
-           "merge_sort нестабилен: при равных ключах нарушен исходный порядок номеров")
+    for _ in range(200):
+        pairs = [(rng.randint(0, 5), i) for i in range(rng.randint(0, 100))]
+        got = merge_sort(pairs, key=lambda p: p[0])
+        for prev, cur in zip(got, got[1:]):
+            expect(
+                prev[0] < cur[0] or (prev[0] == cur[0] and prev[1] < cur[1]),
+                f"merge_sort нестабилен: {prev} стоит перед {cur}",
+            )
+        expect(
+            got == sorted(pairs, key=lambda p: p[0]),
+            "merge_sort нестабилен: при равных ключах нарушен исходный порядок номеров",
+        )
+
+
+def merge_stability_demo() -> None:
+    """Наглядно: порядок номеров при равных ключах после merge_sort."""
+    src = [(2, 0), (1, 1), (2, 2), (0, 3), (1, 4), (2, 5), (0, 6), (1, 7)]
+    res = merge_sort(src, key=lambda p: p[0])
+    print("\nСтабильность merge_sort (пары (ключ, номер), сортировка только по ключу):")
+    print("  вход:     ", src)
+    print("  результат:", res)
+    for k in sorted({key for key, _ in src}):
+        nums = [num for key, num in res if key == k]
+        verdict = "порядок сохранён" if nums == sorted(nums) else "порядок НАРУШЕН"
+        print(f"  ключ {k}: номера {nums} -> {verdict}")
 
 
 def self_check() -> None:
@@ -176,8 +222,10 @@ def self_check() -> None:
     # TODO: добавить собственные проверки (свойство кучи после построения,
     #       устойчивость поразрядного прохода radix) и описать их в отчёте.
     if failed:
-        raise SystemExit(f"self_check: не пройдено разделов — {failed}; "
-                         f"замеры выполняются только после всех проверок.")
+        raise SystemExit(
+            f"self_check: не пройдено разделов — {failed}; "
+            f"замеры выполняются только после всех проверок."
+        )
     print("self_check: OK")
 
 
@@ -187,8 +235,8 @@ def self_check() -> None:
 
 SIZES = [1_000, 3_000, 10_000, 30_000, 100_000]
 REPEATS = 5
-SMALL_KEY_MAX = 100        # узкий диапазон: counting уместен
-WIDE_KEY_MAX = 10**9       # широкий диапазон: counting теряет смысл (обсудить в отчёте)
+SMALL_KEY_MAX = 100  # узкий диапазон: counting уместен
+WIDE_KEY_MAX = 10**9  # широкий диапазон: counting теряет смысл (обсудить в отчёте)
 
 
 def make_datasets(rng: random.Random, n: int) -> dict[str, list[int]]:
@@ -257,6 +305,7 @@ def main() -> None:
     seed = 30 + args.variant
     random.seed(seed)
     self_check()
+    merge_stability_demo()
     run_benchmarks(seed)
 
 
