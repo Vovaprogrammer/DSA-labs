@@ -6,9 +6,9 @@
 | --- | --- | --- | --- |
 | 1 | Введение и алгоритмическая сложность | [lecture-01-complexity.md](lecture-01-complexity.md) | 1 |
 | 2 | Рекурсия и линейные структуры данных | [lecture-02-recursion-linear-structures.md](lecture-02-recursion-linear-structures.md) | 1 |
-| 3 | Базовые алгоритмы сортировки, QuickSort | — | 2 |
-| 4 | MergeSort, линейно-временные и кучные сортировки | — | 2 |
-| 5 | Бинарное дерево поиска, AVL-деревья | — | 3 |
+| 3 | Базовые сортировки и быстрая сортировка | [lecture-03-simple-sorts-quicksort.md](lecture-03-simple-sorts-quicksort.md) | 2 |
+| 4 | Слияние, линейные сортировки и куча | [lecture-04-mergesort-linear-heapsort.md](lecture-04-mergesort-linear-heapsort.md) | 2 |
+| 5 | Бинарные деревья поиска и AVL-деревья | [lecture-05-bst-avl.md](lecture-05-bst-avl.md) | 3 |
 | 6 | Поиск в линейных структурах | — | 4 |
 | 7 | Поиск подстрок | — | 4 |
 | 8 | Хеш-таблицы | — | 4 |

@@ -13,7 +13,9 @@ from __future__ import annotations
 import argparse
 import random
 import statistics
+import sys
 import time
+import traceback
 
 # ---------------------------------------------------------------------------
 # 1. Сортировки (реализуются вручную; sorted() используется только как эталон)
@@ -87,35 +89,95 @@ def quick_sort(a: list[int]) -> list[int]:
 # ---------------------------------------------------------------------------
 
 
-def self_check() -> None:
-    """Граничные и типовые случаи, стабильность, сверка с эталоном sorted()."""
-    # Граничные случаи: пустой массив, один элемент, все элементы равны
-    assert merge_sort([]) == []
-    assert merge_sort([7]) == [7]
-    assert merge_sort([5, 5, 5]) == [5, 5, 5]
-    assert counting_sort([], key_max=10) == []
-    assert radix_sort_lsd([0]) == [0]
-    single = [42]
-    heap_sort(single)
-    assert single == [42]
+class SelfCheckError(Exception):
+    """Нарушен контракт или инвариант реализации."""
 
-    # Стабильность слияния: пары (ключ, порядковый номер); эталон sorted() стабилен,
-    # поэтому при равных ключах порядок номеров обязан совпасть
-    rng = random.Random(0)
-    pairs = [(rng.randint(0, 5), i) for i in range(100)]
-    assert merge_sort(pairs, key=lambda p: p[0]) == sorted(pairs, key=lambda p: p[0])
+
+def expect(condition: bool, message: str) -> None:
+    """Явная проверка вместо assert: assert-ы исчезают при запуске python -O."""
+    if not condition:
+        raise SelfCheckError(message)
+
+
+def heap_sorted(a: list[int]) -> list[int]:
+    """heap_sort сортирует на месте: проверяется тот список, который ему передали."""
+    buf = list(a)
+    heap_sort(buf)
+    return buf
+
+
+# Каждая функция возвращает отсортированный список; ключи — целые из [0, 999].
+SORTS = {
+    "merge_sort": lambda a: merge_sort(a),
+    "counting_sort": lambda a: counting_sort(a, key_max=999),
+    "radix_sort_lsd": lambda a: radix_sort_lsd(a),
+    "heap_sort": lambda a: heap_sorted(a),
+    "quick_sort": lambda a: quick_sort(a),
+}
+
+
+def check_sort(fn) -> None:
+    """Граничные случаи, инварианты сортировки и сверка с эталоном sorted()."""
+    boundary = [
+        [],                    # пустой массив
+        [7],                   # один элемент
+        [0],                   # нулевой ключ
+        [5, 5, 5],             # все элементы равны
+        [1, 2, 3, 4, 5],       # уже отсортирован
+        [5, 4, 3, 2, 1],       # обратный порядок
+    ]
+    for a in boundary:
+        res = fn(list(a))
+        expect(isinstance(res, list), f"на {a} возвращён {type(res).__name__}, а не список")
+        expect(res == sorted(a), f"на {a} получено {res}, ожидалось {sorted(a)}")
 
     # Случайные тесты: инвариант перестановки + сверка с эталоном
+    rng = random.Random(0)
     for _ in range(200):
         a = [rng.randint(0, 999) for _ in range(rng.randint(0, 60))]
-        expected = sorted(a)
-        assert merge_sort(a) == expected
-        assert counting_sort(a, key_max=999) == expected
-        assert radix_sort_lsd(a) == expected
-        buf = list(a)
-        heap_sort(buf)
-        assert buf == expected
-        assert sorted(buf) == expected  # выход — перестановка входа
+        res = fn(list(a))
+        expect(sorted(res) == sorted(a), f"не перестановка входа {a}: получено {res}")
+        expect(res == sorted(a), f"расходится с sorted() на {a}: получено {res}")
+
+
+def check_merge_stability() -> None:
+    """Стабильность слияния на парах (ключ, порядковый номер): эталон sorted() стабилен,
+    поэтому при равных ключах порядок номеров обязан совпасть."""
+    rng = random.Random(0)
+    pairs = [(rng.randint(0, 5), i) for i in range(100)]
+    got = merge_sort(pairs, key=lambda p: p[0])
+    expect(got == sorted(pairs, key=lambda p: p[0]),
+           "merge_sort нестабилен: при равных ключах нарушен исходный порядок номеров")
+
+
+def self_check() -> None:
+    """Все проверки по разделам; при любой ошибке замеры не выполняются."""
+    # fn=fn фиксирует функцию текущего шага цикла (иначе все лямбды увидят последнюю)
+    checks = [(name, lambda fn=fn: check_sort(fn)) for name, fn in SORTS.items()]
+    checks.append(("стабильность merge_sort", check_merge_stability))
+    failed = 0
+    print("self_check:")
+    for name, check in checks:
+        try:
+            check()
+        except NotImplementedError as err:
+            where = traceback.extract_tb(err.__traceback__)[-1].name
+            print(f"  {name}: не реализовано — {where} (TODO)")
+            failed += 1
+        except SelfCheckError as err:
+            print(f"  {name}: ОШИБКА — {err}")
+            failed += 1
+        except Exception:  # noqa: BLE001 — падение реализации тоже результат проверки
+            print(f"  {name}: ИСКЛЮЧЕНИЕ")
+            traceback.print_exc(file=sys.stdout)
+            failed += 1
+        else:
+            print(f"  {name}: OK")
+    # TODO: добавить собственные проверки (свойство кучи после построения,
+    #       устойчивость поразрядного прохода radix) и описать их в отчёте.
+    if failed:
+        raise SystemExit(f"self_check: не пройдено разделов — {failed}; "
+                         f"замеры выполняются только после всех проверок.")
     print("self_check: OK")
 
 

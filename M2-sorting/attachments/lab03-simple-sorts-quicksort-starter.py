@@ -13,7 +13,9 @@ from __future__ import annotations
 import argparse
 import random
 import statistics
+import sys
 import time
+import traceback
 
 # ---------------------------------------------------------------------------
 # 1. Простые сортировки со счётчиками (сортируют КОПИЮ входа, вход не меняют)
@@ -113,7 +115,17 @@ def is_sorted(a: list) -> bool:
     return all(a[i] <= a[i + 1] for i in range(len(a) - 1))
 
 
-def self_check() -> None:
+class SelfCheckError(Exception):
+    """Нарушен контракт или инвариант реализации."""
+
+
+def expect(condition: bool, message: str) -> None:
+    """Явная проверка вместо assert: assert-ы исчезают при запуске python -O."""
+    if not condition:
+        raise SelfCheckError(message)
+
+
+def check_algorithm(fn) -> None:
     """Граничные случаи, инварианты сортировки и сверка с эталоном sorted()."""
     boundary = [
         [],                    # пустой массив
@@ -122,23 +134,55 @@ def self_check() -> None:
         [1, 2, 3, 4, 5],       # уже отсортирован
         [5, 4, 3, 2, 1],       # обратный порядок
     ]
-    for name, fn in ALGORITHMS.items():
-        for a in boundary:
-            res = fn(list(a))
-            assert is_sorted(res), f"{name}: нарушен порядок на {a}"
-            assert sorted(res) == sorted(a), f"{name}: не перестановка входа {a}"
+    for a in boundary:
+        res = fn(list(a))
+        expect(isinstance(res, list), f"на {a} возвращён {type(res).__name__}, а не список")
+        expect(is_sorted(res), f"нарушен порядок на {a}: получено {res}")
+        expect(sorted(res) == sorted(a), f"не перестановка входа {a}: получено {res}")
 
     # Сверка с эталоном из стандартной библиотеки на сотнях случайных входов.
     rng = random.Random(0)
     for _ in range(300):
         a = [rng.randint(-100, 100) for _ in range(rng.randint(0, 80))]
-        expected = sorted(a)
-        for name, fn in ALGORITHMS.items():
-            assert fn(list(a)) == expected, f"{name}: расходится с sorted() на {a}"
+        res = fn(list(a))
+        expect(res == sorted(a), f"расходится с sorted() на {a}: получено {res}")
 
-    # Счётчики: у сортировки выбором ровно n*(n-1)/2 сравнений на любом входе.
+
+def check_counters() -> None:
+    """Счётчики: у сортировки выбором ровно n*(n-1)/2 сравнений на любом входе."""
     _, comparisons, _ = selection_sort([3, 1, 2, 5, 4])
-    assert comparisons == 10, "selection_sort: неверный счётчик сравнений"
+    expect(comparisons == 10,
+           f"selection_sort: неверный счётчик сравнений — {comparisons}, ожидалось 10")
+
+
+def self_check() -> None:
+    """Все проверки по разделам; при любой ошибке замеры не выполняются."""
+    # fn=fn фиксирует функцию текущего шага цикла (иначе все лямбды увидят последнюю)
+    checks = [(name, lambda fn=fn: check_algorithm(fn)) for name, fn in ALGORITHMS.items()]
+    checks.append(("счётчики", check_counters))
+    failed = 0
+    print("self_check:")
+    for name, check in checks:
+        try:
+            check()
+        except NotImplementedError as err:
+            where = traceback.extract_tb(err.__traceback__)[-1].name
+            print(f"  {name}: не реализовано — {where} (TODO)")
+            failed += 1
+        except SelfCheckError as err:
+            print(f"  {name}: ОШИБКА — {err}")
+            failed += 1
+        except Exception:  # noqa: BLE001 — падение реализации тоже результат проверки
+            print(f"  {name}: ИСКЛЮЧЕНИЕ")
+            traceback.print_exc(file=sys.stdout)
+            failed += 1
+        else:
+            print(f"  {name}: OK")
+    # TODO: добавить собственные проверки (стабильность, счётчики пузырька и вставок)
+    #       и описать их в отчёте.
+    if failed:
+        raise SystemExit(f"self_check: не пройдено разделов — {failed}; "
+                         f"замеры выполняются только после всех проверок.")
     print("self_check: OK")
 
 
