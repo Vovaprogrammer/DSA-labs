@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import linecache
 import random
 import statistics
 import sys
@@ -79,6 +80,11 @@ def check_invariants(original: list[int], result: list[int]) -> list[str]:
             f"лишние {sorted(extra)[:5]}"
         )
     return violations
+
+
+def violated(original: list[int], result: list[int]) -> list[str]:
+    """Какие инварианты нарушены: ["инвариант 1"], ["инвариант 2"], оба или []."""
+    return [msg.split(" (")[0] for msg in check_invariants(original, result)]
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +175,76 @@ def run_representative_tests(rng: random.Random) -> None:
 # ---------------------------------------------------------------------------
 
 
+def call_sort(data: list[int]) -> tuple[list[int] | None, str | None]:
+    """(результат, None) или (None, имя исключения): падение — тоже результат."""
+    try:
+        return quicksort(data), None
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return None, type(exc).__name__
+
+
+def differs_from_reference(data: list[int]) -> bool:
+    """Расхождение с эталоном: другой результат или аварийное завершение."""
+    return call_sort(data)[0] != sorted(data)
+
+
+def shrink(data: list[int]) -> list[int]:
+    """Сводит контрпример к минимальному.
+
+    Удаляет по одному элементу, пока расхождение сохраняется. Итог
+    1-минимален: без любого своего элемента вход сортируется верно.
+    """
+    shrunk = True
+    while shrunk:
+        shrunk = False
+        for i in range(len(data)):
+            candidate = data[:i] + data[i + 1 :]
+            if differs_from_reference(candidate):
+                data, shrunk = candidate, True
+                break
+    return data
+
+
+def trace_top_call(fn, data: list[int]) -> tuple[list[int], dict]:
+    """Трассировка внешнего вызова fn(data) через sys.settrace.
+
+    Возвращает номера строк, выполненных в этом вызове (без вложенных
+    рекурсивных), и его локальные переменные в момент возврата;
+    возвращённое значение — под ключом "return".
+    """
+    top, lines, state = [], [], {}
+
+    def tracer(frame, event, arg):
+        if event == "call":
+            if frame.f_code is not fn.__code__ or top:
+                return None  # вложенные вызовы и списковые включения не нужны
+            top.append(frame)
+        elif event == "line":
+            lines.append(frame.f_lineno)
+        elif event == "return":
+            state.update(frame.f_locals)
+            state["return"] = arg
+        return tracer
+
+    sys.settrace(tracer)
+    try:
+        fn(data)
+    finally:
+        sys.settrace(None)
+    return list(dict.fromkeys(lines)), state
+
+
+def localize(data: list[int]) -> None:
+    """Печатает строки quicksort, выполненные на контрпримере, и её состояние."""
+    lines, state = trace_top_call(quicksort, data)
+    filename = quicksort.__code__.co_filename
+    print(f"  трассировка внешнего вызова quicksort({data}):")
+    for lineno in lines:
+        print(f"    строка {lineno}: {linecache.getline(filename, lineno).strip()}")
+    for name, value in state.items():
+        print(f"    {name} = {value}")
+
+
 def compare_with_reference(rng: random.Random, runs: int = 300) -> None:
     """Сверка quicksort с sorted() на сотнях случайных входов.
 
@@ -176,10 +252,50 @@ def compare_with_reference(rng: random.Random, runs: int = 300) -> None:
     удобно локализовать расхождение), обязательно с дубликатами и
     отрицательными числами. Каждое расхождение печатайте вместе со входом,
     чтобы затем свести его к минимальному контрпримеру.
+
+    Расхождения считаются отдельно для входов с дубликатами и без них;
+    самый короткий контрпример сокращается (shrink) и трассируется
+    по строкам проверяемого кода (localize).
     """
-    # TODO: цикл на runs итераций: вход -> quicksort(вход) vs sorted(вход);
-    # TODO: подсчитать и напечатать число расхождений и минимальный контрпример.
-    raise NotImplementedError
+    print(f"\nШаг 3. Сверка с sorted() на {runs} случайных входах")
+    inputs = {True: 0, False: 0}  # есть ли во входе дубликаты -> число входов
+    mismatches = {True: 0, False: 0}
+    kinds: Counter[str] = Counter()
+    dedup = 0  # на скольких входах выход равен sorted(set(вход))
+    counterexamples = []
+    for k in range(runs):
+        # 9 сочетаний размера и диапазона по очереди: узкий диапазон даёт
+        # много дубликатов, широкий — почти без них
+        max_n = (10, 100, 1000)[k % 3]
+        span = (5, 100, 10**6)[k // 3 % 3]
+        data = [rng.randint(-span, span) for _ in range(rng.randint(0, max_n))]
+        has_dups = len(set(data)) < len(data)
+        inputs[has_dups] += 1
+        result, error = call_sort(data)
+        dedup += result == sorted(set(data))
+        if result == sorted(data):
+            continue
+        mismatches[has_dups] += 1
+        kinds[error or " и ".join(violated(data, result))] += 1
+        counterexamples.append(data)
+    for has_dups, label in ((True, "с дубликатами"), (False, "без дубликатов")):
+        print(
+            f"  входов {label}: {inputs[has_dups]}, "
+            f"расхождений: {mismatches[has_dups]}"
+        )
+    for kind, count in kinds.items():
+        print(f"  вид расхождения — {kind}: {count}")
+    print(f"  выход совпал с sorted(set(вход)) на {dedup} из {runs} входов")
+    if not counterexamples:
+        print("  расхождений нет")
+        return
+    counterexamples.sort(key=len)
+    print(f"  самые короткие расхождения (5 из {len(counterexamples)}):")
+    for data in counterexamples[:5]:
+        print(f"    {data} -> {call_sort(data)[0]}")
+    minimal = shrink(counterexamples[0])
+    print(f"  минимальный контрпример: {minimal} -> {call_sort(minimal)[0]}")
+    localize(minimal)
 
 
 # ---------------------------------------------------------------------------
@@ -243,11 +359,6 @@ def expect(condition: bool, message: str) -> None:
     """Явная проверка вместо assert: assert-ы исчезают при запуске python -O."""
     if not condition:
         raise SelfCheckError(message)
-
-
-def violated(original: list[int], result: list[int]) -> list[str]:
-    """Какие инварианты нарушены: ["инвариант 1"], ["инвариант 2"], оба или []."""
-    return [msg.split(" (")[0] for msg in check_invariants(original, result)]
 
 
 def self_check() -> None:
