@@ -1,0 +1,334 @@
+{
+  "variant": 14,
+  "seed": 44,
+  "python": "3.11.9",
+  "repeats": 5,
+  "sizes": [
+    50,
+    100,
+    200,
+    400,
+    800,
+    1600,
+    3200,
+    6400,
+    12800
+  ],
+  "raised_limit": 10000,
+  "summary": {
+    "random": {
+      "slope": 1.123947462898038,
+      "points": 9,
+      "first_crash_n": null
+    },
+    "sorted": {
+      "slope": 1.9480551309070924,
+      "points": 8,
+      "first_crash_n": 1600
+    },
+    "reversed": {
+      "slope": 1.9644153330535596,
+      "points": 8,
+      "first_crash_n": 1600
+    }
+  },
+  "records": [
+    {
+      "kind": "random",
+      "n": 50,
+      "limit": 1000,
+      "time_s": 2.519999998185085e-05,
+      "depth": 11,
+      "peak_kib": 3.109375,
+      "error": null
+    },
+    {
+      "kind": "random",
+      "n": 100,
+      "limit": 1000,
+      "time_s": 5.5400000007921335e-05,
+      "depth": 14,
+      "peak_kib": 6.421875,
+      "error": null
+    },
+    {
+      "kind": "random",
+      "n": 200,
+      "limit": 1000,
+      "time_s": 0.00012610000004542599,
+      "depth": 18,
+      "peak_kib": 8.3125,
+      "error": null
+    },
+    {
+      "kind": "random",
+      "n": 400,
+      "limit": 1000,
+      "time_s": 0.0002917000000479675,
+      "depth": 19,
+      "peak_kib": 21.296875,
+      "error": null
+    },
+    {
+      "kind": "random",
+      "n": 800,
+      "limit": 1000,
+      "time_s": 0.000863499999979922,
+      "depth": 19,
+      "peak_kib": 26.8515625,
+      "error": null
+    },
+    {
+      "kind": "random",
+      "n": 1600,
+      "limit": 1000,
+      "time_s": 0.001316999999971813,
+      "depth": 25,
+      "peak_kib": 56.6640625,
+      "error": null
+    },
+    {
+      "kind": "random",
+      "n": 3200,
+      "limit": 1000,
+      "time_s": 0.0030188000000066495,
+      "depth": 25,
+      "peak_kib": 119.3125,
+      "error": null
+    },
+    {
+      "kind": "random",
+      "n": 6400,
+      "limit": 1000,
+      "time_s": 0.006064200000025721,
+      "depth": 29,
+      "peak_kib": 200.7109375,
+      "error": null
+    },
+    {
+      "kind": "random",
+      "n": 12800,
+      "limit": 1000,
+      "time_s": 0.012412499999982174,
+      "depth": 29,
+      "peak_kib": 423.9375,
+      "error": null
+    },
+    {
+      "kind": "sorted",
+      "n": 50,
+      "limit": 1000,
+      "time_s": 5.870000001095832e-05,
+      "depth": 50,
+      "peak_kib": 17.2109375,
+      "error": null
+    },
+    {
+      "kind": "sorted",
+      "n": 100,
+      "limit": 1000,
+      "time_s": 0.0001988000000210377,
+      "depth": 100,
+      "peak_kib": 59.5078125,
+      "error": null
+    },
+    {
+      "kind": "sorted",
+      "n": 200,
+      "limit": 1000,
+      "time_s": 0.0010206999999695654,
+      "depth": 200,
+      "peak_kib": 205.7578125,
+      "error": null
+    },
+    {
+      "kind": "sorted",
+      "n": 400,
+      "limit": 1000,
+      "time_s": 0.0027964999999881,
+      "depth": 400,
+      "peak_kib": 747.0078125,
+      "error": null
+    },
+    {
+      "kind": "sorted",
+      "n": 800,
+      "limit": 1000,
+      "time_s": 0.010708099999988008,
+      "depth": 800,
+      "peak_kib": 2831.5390625,
+      "error": null
+    },
+    {
+      "kind": "sorted",
+      "n": 1600,
+      "limit": 1000,
+      "time_s": null,
+      "depth": 992,
+      "peak_kib": null,
+      "error": "RecursionError"
+    },
+    {
+      "kind": "sorted",
+      "n": 1600,
+      "limit": 10000,
+      "time_s": 0.04208590000001777,
+      "depth": 1600,
+      "peak_kib": 10952.1640625,
+      "error": null
+    },
+    {
+      "kind": "sorted",
+      "n": 3200,
+      "limit": 1000,
+      "time_s": null,
+      "depth": 992,
+      "peak_kib": null,
+      "error": "RecursionError"
+    },
+    {
+      "kind": "sorted",
+      "n": 3200,
+      "limit": 10000,
+      "time_s": 0.19558290000003353,
+      "depth": 3200,
+      "peak_kib": 43118.0078125,
+      "error": null
+    },
+    {
+      "kind": "sorted",
+      "n": 6400,
+      "limit": 1000,
+      "time_s": null,
+      "depth": 992,
+      "peak_kib": null,
+      "error": "RecursionError"
+    },
+    {
+      "kind": "sorted",
+      "n": 6400,
+      "limit": 10000,
+      "time_s": 0.7805013000000258,
+      "depth": 6400,
+      "peak_kib": 171305.7265625,
+      "error": null
+    },
+    {
+      "kind": "sorted",
+      "n": 12800,
+      "limit": 1000,
+      "time_s": null,
+      "depth": 992,
+      "peak_kib": null,
+      "error": "RecursionError"
+    },
+    {
+      "kind": "reversed",
+      "n": 50,
+      "limit": 1000,
+      "time_s": 6.130000002713132e-05,
+      "depth": 50,
+      "peak_kib": 14.203125,
+      "error": null
+    },
+    {
+      "kind": "reversed",
+      "n": 100,
+      "limit": 1000,
+      "time_s": 0.00021700000002056186,
+      "depth": 100,
+      "peak_kib": 53.375,
+      "error": null
+    },
+    {
+      "kind": "reversed",
+      "n": 200,
+      "limit": 1000,
+      "time_s": 0.0008073000000194952,
+      "depth": 200,
+      "peak_kib": 193.375,
+      "error": null
+    },
+    {
+      "kind": "reversed",
+      "n": 400,
+      "limit": 1000,
+      "time_s": 0.0030894000000216693,
+      "depth": 400,
+      "peak_kib": 722.125,
+      "error": null
+    },
+    {
+      "kind": "reversed",
+      "n": 800,
+      "limit": 1000,
+      "time_s": 0.012084399999992002,
+      "depth": 800,
+      "peak_kib": 2781.65625,
+      "error": null
+    },
+    {
+      "kind": "reversed",
+      "n": 1600,
+      "limit": 1000,
+      "time_s": null,
+      "depth": 992,
+      "peak_kib": null,
+      "error": "RecursionError"
+    },
+    {
+      "kind": "reversed",
+      "n": 1600,
+      "limit": 10000,
+      "time_s": 0.04644580000001497,
+      "depth": 1600,
+      "peak_kib": 10852.28125,
+      "error": null
+    },
+    {
+      "kind": "reversed",
+      "n": 3200,
+      "limit": 1000,
+      "time_s": null,
+      "depth": 992,
+      "peak_kib": null,
+      "error": "RecursionError"
+    },
+    {
+      "kind": "reversed",
+      "n": 3200,
+      "limit": 10000,
+      "time_s": 0.1955791999999974,
+      "depth": 3200,
+      "peak_kib": 42918.125,
+      "error": null
+    },
+    {
+      "kind": "reversed",
+      "n": 6400,
+      "limit": 1000,
+      "time_s": null,
+      "depth": 992,
+      "peak_kib": null,
+      "error": "RecursionError"
+    },
+    {
+      "kind": "reversed",
+      "n": 6400,
+      "limit": 10000,
+      "time_s": 0.8593103000000042,
+      "depth": 6400,
+      "peak_kib": 170905.84375,
+      "error": null
+    },
+    {
+      "kind": "reversed",
+      "n": 12800,
+      "limit": 1000,
+      "time_s": null,
+      "depth": 992,
+      "peak_kib": null,
+      "error": "RecursionError"
+    }
+  ]
+}

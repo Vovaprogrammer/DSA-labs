@@ -13,14 +13,23 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.util
+import json
 import linecache
+import math
 import random
 import statistics
 import sys
 import time
+import tracemalloc
 from collections import Counter
 from pathlib import Path
+
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+
+plt.switch_backend("Agg")  # рисуем сразу в файл, окно не нужно
 
 # ---------------------------------------------------------------------------
 # 0. Загрузка проверяемого кода
@@ -84,7 +93,7 @@ def check_invariants(original: list[int], result: list[int]) -> list[str]:
 
 def violated(original: list[int], result: list[int]) -> list[str]:
     """Какие инварианты нарушены: ["инвариант 1"], ["инвариант 2"], оба или []."""
-    return [msg.split(" (")[0] for msg in check_invariants(original, result)]
+    return [msg.partition(" (")[0] for msg in check_invariants(original, result)]
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +169,7 @@ def run_representative_tests(rng: random.Random) -> None:
             print(f"  {'':<34} {before} -> {result}")
         for problem in problems:
             # ключ сводки — вид нарушения без подробностей
-            found.setdefault(problem.split(" (")[0], []).append(
+            found.setdefault(problem.partition(" (")[0], []).append(
                 f"{name}, n={len(before)}"
             )
     print("Какие классы входов вскрыли нарушения:")
@@ -245,6 +254,18 @@ def localize(data: list[int]) -> None:
         print(f"    {name} = {value}")
 
 
+def reference_inputs(rng: random.Random, runs: int):
+    """runs случайных входов с отрицательными числами для сверки с эталоном.
+
+    9 сочетаний размера и диапазона значений идут по очереди: узкий
+    диапазон даёт много дубликатов, широкий — почти без них.
+    """
+    for k in range(runs):
+        max_n = (10, 100, 1000)[k % 3]
+        span = (5, 100, 10**6)[k // 3 % 3]
+        yield [rng.randint(-span, span) for _ in range(rng.randint(0, max_n))]
+
+
 def compare_with_reference(rng: random.Random, runs: int = 300) -> None:
     """Сверка quicksort с sorted() на сотнях случайных входов.
 
@@ -263,12 +284,7 @@ def compare_with_reference(rng: random.Random, runs: int = 300) -> None:
     kinds: Counter[str] = Counter()
     dedup = 0  # на скольких входах выход равен sorted(set(вход))
     counterexamples = []
-    for k in range(runs):
-        # 9 сочетаний размера и диапазона по очереди: узкий диапазон даёт
-        # много дубликатов, широкий — почти без них
-        max_n = (10, 100, 1000)[k % 3]
-        span = (5, 100, 10**6)[k // 3 % 3]
-        data = [rng.randint(-span, span) for _ in range(rng.randint(0, max_n))]
+    for data in reference_inputs(rng, runs):
         has_dups = len(set(data)) < len(data)
         inputs[has_dups] += 1
         result, error = call_sort(data)
@@ -303,14 +319,31 @@ def compare_with_reference(rng: random.Random, runs: int = 300) -> None:
 # (методика — docs/reproducibility.md: прогрев, >=5 повторов, медиана)
 # ---------------------------------------------------------------------------
 
-SIZES = [500, 1_000, 2_000, 4_000, 8_000]
+SIZES = [50, 100, 200, 400, 800, 1_600, 3_200, 6_400, 12_800]
 REPEATS = 5
 INPUT_KINDS = ("random", "sorted", "reversed")
+# Упавшие точки до RAISED_MAX_N перемеряются с поднятым пределом рекурсии.
+# Дальше не идём: на упорядоченном входе ИИ-код держит Θ(n²) памяти —
+# около 170 МиБ при n = 6400 и около 670 МиБ при n = 12 800.
+RAISED_LIMIT = 10_000
+RAISED_MAX_N = 6_400
+
+PLOTS_DIR = Path(__file__).with_name("plots")
+# цвет закреплён за классом входа (первые три слота эталонной палитры)
+COLORS = {"random": "#2a78d6", "sorted": "#eb6834", "reversed": "#1baf7a"}
+MARKERS = {"random": "o", "sorted": "s", "reversed": "^"}
+INK, MUTED, GRID = "#0b0b0b", "#52514e", "#e4e3df"
 
 
 def make_input(rng: random.Random, n: int, kind: str) -> list[int]:
-    """Вход размера n одного из трёх классов: random / sorted / reversed."""
-    a = [rng.randint(-1000, 1000) for _ in range(n)]
+    """Вход размера n одного из трёх классов: random / sorted / reversed.
+
+    В отличие от заготовки числа различные: на дубликатах ИИ-код теряет
+    элементы (раздел 4 отчёта), а глубина его рекурсии ограничена числом
+    различных значений. С различными числами время зависит только от
+    выбора опорного элемента.
+    """
+    a = rng.sample(range(-(10**6), 10**6), n)
     if kind == "sorted":
         a.sort()
     elif kind == "reversed":
@@ -329,21 +362,299 @@ def bench(fn, data: list[int]) -> float:
     return statistics.median(times)
 
 
-def run_benchmarks(seed: int) -> None:
-    """Замеры quicksort на трёх классах входов; аварийные завершения фиксируются."""
+def max_depth(fn, data: list[int]) -> int:
+    """Наибольшая глубина рекурсии fn(data) — по событиям sys.setprofile.
+
+    При RecursionError возвращает глубину, на которой стек переполнился.
+    """
+    depth = deepest = 0
+
+    def profiler(frame, event, _arg):
+        nonlocal depth, deepest
+        if frame.f_code is not fn.__code__:
+            return  # списковые включения и встроенные функции не считаются
+        if event == "call":
+            depth += 1
+            deepest = max(deepest, depth)
+        elif event == "return":
+            depth -= 1
+
+    sys.setprofile(profiler)
+    try:
+        fn(data)
+    except RecursionError:
+        pass
+    finally:
+        sys.setprofile(None)
+    return deepest
+
+
+def peak_memory(fn, data: list[int]) -> int:
+    """Пик памяти (байты), выделенной во время fn(data), — tracemalloc."""
+    tracemalloc.start()
+    try:
+        fn(data)
+        return tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+
+@contextlib.contextmanager
+def recursion_limit(limit: int):
+    """Временно меняет предел рекурсии Python и затем восстанавливает его."""
+    old = sys.getrecursionlimit()
+    sys.setrecursionlimit(limit)
+    try:
+        yield
+    finally:
+        sys.setrecursionlimit(old)
+
+
+def measure(kind: str, data: list[int]) -> dict:
+    """Одна точка бенчмарка при текущем пределе рекурсии; печатает её."""
+    rec = {
+        "kind": kind,
+        "n": len(data),
+        "limit": sys.getrecursionlimit(),
+        "time_s": None,
+        "depth": max_depth(quicksort, data),
+        "peak_kib": None,
+        "error": None,
+    }
+    head = f"  n={rec['n']:>6}  предел={rec['limit']:<6}"
+    try:
+        rec["time_s"] = bench(quicksort, data)
+    except RecursionError:
+        # аварийное завершение — тоже результат верификации
+        rec["error"] = "RecursionError"
+        print(f"{head} RecursionError на глубине {rec['depth']}")
+        return rec
+    rec["peak_kib"] = peak_memory(quicksort, data) / 1024
+    print(
+        f"{head} t={rec['time_s']:.6f} c  глубина={rec['depth']:<5} "
+        f"пик памяти={rec['peak_kib']:.0f} КиБ"
+    )
+    return rec
+
+
+def run_benchmarks(seed: int) -> list[dict]:
+    """Замеры quicksort на трёх классах входов; аварийные завершения фиксируются.
+
+    Для каждой точки — медиана времени, наибольшая глубина рекурсии и пик
+    памяти (глубина и память — в отдельных, не замеряемых по времени
+    запусках). Точка, упавшая с RecursionError, при n <= RAISED_MAX_N
+    перемеряется с поднятым пределом рекурсии: так видно, во что обходится
+    упорядоченный вход, если стек не ограничен.
+    """
     rng = random.Random(seed)
+    records = []
     for kind in INPUT_KINDS:
         print(f"\nкласс входа: {kind}")
         for n in SIZES:
             data = make_input(rng, n, kind)
-            try:
-                print(f"  n={n:>6}  t={bench(quicksort, data):.6f} c")
-            except RecursionError:
-                # Аварийное завершение — тоже результат верификации:
-                # зафиксируйте его в отчёте вместе с размером входа.
-                print(f"  n={n:>6}  RecursionError")
-    # TODO: сопоставить рост времени по классам входов с заявленной в docstring
-    # TODO: оценкой O(n log n); объяснить наблюдаемую деградацию и её причину в коде.
+            records.append(measure(kind, data))
+            if records[-1]["error"] and n <= RAISED_MAX_N:
+                with recursion_limit(RAISED_LIMIT):
+                    records.append(measure(kind, data))
+    return records
+
+
+def slope(points: list[tuple[int, float]]) -> float | None:
+    """Наклон прямой МНК в осях log-log — показатель степени роста времени."""
+    if len(points) < 2:
+        return None
+    xs = [math.log(n) for n, _ in points]
+    ys = [math.log(t) for _, t in points]
+    return statistics.linear_regression(xs, ys).slope
+
+
+def summarize(records: list[dict]) -> dict:
+    """Наклоны по классам входов и порог аварийного завершения; печатает сводку."""
+    print("\nСводка шага 4 (для заявленной O(n log n) наклон чуть больше 1)")
+    summary = {}
+    for kind in INPUT_KINDS:
+        rows = [r for r in records if r["kind"] == kind]
+        timed = [(r["n"], r["time_s"]) for r in rows if r["time_s"] is not None]
+        crashed = [r["n"] for r in rows if r["error"]]
+        summary[kind] = {
+            "slope": slope(timed),
+            "points": len(timed),
+            "first_crash_n": min(crashed, default=None),
+        }
+        k = summary[kind]["slope"]
+        crash = f"RecursionError с n = {min(crashed)}" if crashed else "без падений"
+        print(
+            f"  {kind:<9} наклон = {'—' if k is None else f'{k:.2f}'} "
+            f"по {len(timed)} точкам; {crash}"
+        )
+    return summary
+
+
+def guide(ax, xs: list[int], f, anchor: tuple[int, float], label: str) -> None:
+    """Опорная серая линия c·f(n) через точку anchor с подписью справа."""
+    c = anchor[1] / f(anchor[0])
+    ys = [c * f(x) for x in xs]
+    ax.plot(xs, ys, ls=":", lw=1.2, color=MUTED, zorder=1)
+    ax.annotate(
+        label,
+        (xs[-1], ys[-1]),
+        xytext=(4, 0),
+        textcoords="offset points",
+        color=MUTED,
+        fontsize=9,
+        va="center",
+    )
+
+
+def style_axes(ax, title: str, ylabel: str) -> None:
+    """log-log оси с приглушённой сеткой; текст — цветами текста, не серий."""
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_title(title, color=INK, fontsize=11, loc="left")
+    ax.set_xlabel("n — размер входа", color=MUTED)
+    ax.set_ylabel(ylabel, color=MUTED)
+    ax.tick_params(colors=MUTED, which="both")
+    ax.grid(True, which="major", color=GRID, lw=0.8)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color(GRID)
+
+
+def plot_kind(ax_t, ax_d, kind: str, rows: list[dict]) -> None:
+    """Линии одного класса входа на графиках времени (ax_t) и глубины (ax_d).
+
+    Сплошная линия — обычный предел рекурсии; пунктир с полыми маркерами —
+    повторный замер упавших точек с пределом RAISED_LIMIT; крестик на
+    графике глубины — глубина, на которой стек переполнился.
+    """
+    base = [r for r in rows if r["limit"] != RAISED_LIMIT]
+    raised = [r for r in rows if r["limit"] == RAISED_LIMIT]
+    ok = [r for r in base if r["error"] is None]
+    crashed = [r for r in base if r["error"]]
+    # у sorted и reversed почти одинаковые значения — различаем и формой маркера
+    style = {"color": COLORS[kind], "marker": MARKERS[kind], "lw": 2, "ms": 6}
+    ax_t.plot([r["n"] for r in ok], [r["time_s"] for r in ok], label=kind, **style)
+    ax_d.plot([r["n"] for r in ok], [r["depth"] for r in ok], **style)
+    if crashed:
+        ax_d.plot(
+            [r["n"] for r in crashed],
+            [r["depth"] for r in crashed],
+            ls="",
+            marker="x",
+            ms=8,
+            mew=2,
+            color=COLORS[kind],
+        )
+    if raised:
+        tail = ok[-1:] + raised  # продолжение линии от последней удачной точки
+        style.update(ls="--", mfc="white")
+        ax_t.plot(
+            [r["n"] for r in tail],
+            [r["time_s"] for r in tail],
+            label=f"{kind}, предел {RAISED_LIMIT}",
+            **style,
+        )
+        ax_d.plot([r["n"] for r in tail], [r["depth"] for r in tail], **style)
+
+
+def mark_time_axis(ax, records: list[dict], summary: dict) -> None:
+    """Опорные наклоны n log n и n² и граница аварийного завершения."""
+    for kind, f, label in (
+        ("random", lambda n: n * math.log2(n), "∝ n log n"),
+        ("sorted", lambda n: n * n, "∝ n²"),
+    ):
+        timed = [r for r in records if r["kind"] == kind and r["time_s"] is not None]
+        if timed:
+            xs = [r["n"] for r in timed]
+            guide(ax, xs, f, (xs[0], timed[0]["time_s"]), label)
+    crash_ns = [s["first_crash_n"] for s in summary.values() if s["first_crash_n"]]
+    if crash_ns:
+        ax.axvline(min(crash_ns), color=MUTED, ls="--", lw=1, zorder=1)
+        ax.annotate(
+            f"RecursionError при n ≥ {min(crash_ns)}\n"
+            f"(предел рекурсии {sys.getrecursionlimit()})",
+            (min(crash_ns), 0),
+            xycoords=("data", "axes fraction"),
+            xytext=(4, 6),
+            textcoords="offset points",
+            va="bottom",
+            color=MUTED,
+            fontsize=9,
+        )
+
+
+def mark_depth_axis(ax) -> None:
+    """Предел рекурсии Python и опорные линии n и log₂ n."""
+    limit = sys.getrecursionlimit()
+    ax.axhline(limit, color=MUTED, ls="--", lw=1, zorder=1)
+    ax.annotate(
+        f"предел рекурсии Python = {limit}",
+        (0, limit),
+        xycoords=("axes fraction", "data"),
+        xytext=(4, 4),
+        textcoords="offset points",
+        color=MUTED,
+        fontsize=9,
+    )
+    guide(ax, SIZES, lambda n: n, (SIZES[0], SIZES[0]), "n")
+    guide(ax, SIZES, math.log2, (SIZES[0], math.log2(SIZES[0])), "log₂ n")
+
+
+def plot_results(records: list[dict], summary: dict, variant: int) -> Path:
+    """Два log-log графика: время и наибольшая глубина рекурсии от n."""
+    PLOTS_DIR.mkdir(exist_ok=True)
+    fig, (ax_t, ax_d) = plt.subplots(1, 2, figsize=(13, 5.8))
+    for kind in INPUT_KINDS:
+        plot_kind(ax_t, ax_d, kind, [r for r in records if r["kind"] == kind])
+    mark_time_axis(ax_t, records, summary)
+    mark_depth_axis(ax_d)
+    style_axes(ax_t, "Время quicksort (медиана 5 запусков)", "время, с")
+    style_axes(ax_d, "Наибольшая глубина рекурсии", "глубина, вызовов")
+    # одна общая легенда под графиками: серии на обоих одинаковые
+    handles, labels = ax_t.get_legend_handles_labels()
+    handles.append(Line2D([], [], ls="", marker="x", ms=8, mew=2, color=MUTED))
+    labels.append("глубина, на которой случился RecursionError")
+    fig.legend(
+        handles,
+        labels,
+        loc="lower center",
+        ncol=3,
+        frameon=False,
+        fontsize=9,
+        labelcolor=INK,
+    )
+    fig.suptitle(
+        f"ДЗ 1, вариант {variant}: ИИ-quicksort на случайном, упорядоченном и "
+        "обратном входах",
+        color=INK,
+        fontsize=12,
+    )
+    fig.tight_layout(rect=(0, 0.09, 1, 1))  # место снизу под легенду
+    path = PLOTS_DIR / f"case01_variant{variant}_loglog.png"
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print(f"\nграфик: {path}")
+    return path
+
+
+def save_json(records: list[dict], summary: dict, variant: int) -> Path:
+    """Сырые результаты замеров и сводка — в JSON рядом с графиком."""
+    PLOTS_DIR.mkdir(exist_ok=True)
+    path = PLOTS_DIR / f"case01_variant{variant}_results.json"
+    payload = {
+        "variant": variant,
+        "seed": 30 + variant,
+        "python": sys.version.split()[0],
+        "repeats": REPEATS,
+        "sizes": SIZES,
+        "raised_limit": RAISED_LIMIT,
+        "summary": summary,
+        "records": records,
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf-8")
+    print(f"результаты: {path}")
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -420,7 +731,10 @@ def main() -> None:
     rng = random.Random(seed)
     run_representative_tests(rng)  # шаги 1–2
     compare_with_reference(rng, runs=300)  # шаг 3
-    run_benchmarks(seed)  # шаг 4
+    records = run_benchmarks(seed)  # шаг 4
+    summary = summarize(records)
+    plot_results(records, summary, args.variant)
+    save_json(records, summary, args.variant)
     # TODO: по итогам шагов 1–4 сформулировать в отчёте вердикт о применимости
     # TODO: (принять / принять с доработкой / отклонить), исправить дефекты в копии
     # TODO: файла и подтвердить исправление повторной полной верификацией.
