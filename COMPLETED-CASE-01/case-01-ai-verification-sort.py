@@ -9,6 +9,7 @@
 
 Запуск: python dz01-verification-starter.py --variant N
 """
+
 from __future__ import annotations
 
 import argparse
@@ -16,6 +17,7 @@ import importlib.util
 import random
 import statistics
 import time
+from collections import Counter
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -44,20 +46,38 @@ quicksort = load_quicksort()
 
 def is_sorted(a: list[int]) -> bool:
     """Инвариант 1: последовательность упорядочена по неубыванию."""
-    # TODO: реализовать проверку соседних пар
-    raise NotImplementedError
+    return all(a[i] <= a[i + 1] for i in range(len(a) - 1))
 
 
 def same_multiset(a: list[int], b: list[int]) -> bool:
     """Инвариант 2: b — перестановка a (мультимножества элементов совпадают)."""
-    # TODO: реализовать через collections.Counter
-    raise NotImplementedError
+    return Counter(a) == Counter(b)
 
 
 def check_invariants(original: list[int], result: list[int]) -> list[str]:
-    """Возвращает список нарушенных инвариантов (пустой список — нарушений нет)."""
-    # TODO: проверить оба инварианта и вернуть понятные сообщения о нарушениях
-    raise NotImplementedError
+    """Возвращает список нарушенных инвариантов (пустой список — нарушений нет).
+
+    Сообщение сразу указывает место нарушения: первую пару соседей не по
+    порядку или сколько и каких элементов потеряно и добавлено, — по нему
+    дефект локализуется на шагах 2–3.
+    """
+    violations = []
+    if not is_sorted(result):
+        i = next(i for i in range(len(result) - 1) if result[i] > result[i + 1])
+        violations.append(
+            "инвариант 1 (упорядоченность): "
+            f"result[{i}] = {result[i]} > result[{i + 1}] = {result[i + 1]}"
+        )
+    if not same_multiset(original, result):
+        # разность Counter оставляет только положительные остатки
+        lost = Counter(original) - Counter(result)
+        extra = Counter(result) - Counter(original)
+        violations.append(
+            f"инвариант 2 (перестановка): потеряно {lost.total()}, "
+            f"лишних {extra.total()}; например, потеряны {sorted(lost)[:5]}, "
+            f"лишние {sorted(extra)[:5]}"
+        )
+    return violations
 
 
 # ---------------------------------------------------------------------------
@@ -155,17 +175,67 @@ def run_benchmarks(seed: int) -> None:
 # ---------------------------------------------------------------------------
 
 
+class SelfCheckError(Exception):
+    """Вспомогательная функция верификации работает неверно."""
+
+
+def expect(condition: bool, message: str) -> None:
+    """Явная проверка вместо assert: assert-ы исчезают при запуске python -O."""
+    if not condition:
+        raise SelfCheckError(message)
+
+
+def violated(original: list[int], result: list[int]) -> list[str]:
+    """Какие инварианты нарушены: ["инвариант 1"], ["инвариант 2"], оба или []."""
+    return [msg.split(" (")[0] for msg in check_invariants(original, result)]
+
+
 def self_check() -> None:
     """Проверяет вспомогательные функции до основной верификации."""
-    assert is_sorted([]) and is_sorted([7]) and is_sorted([1, 2, 2, 3])
-    assert not is_sorted([3, 1, 2])
-    assert same_multiset([], []) and same_multiset([2, 1, 2], [1, 2, 2])
-    assert not same_multiset([1, 1, 2], [1, 2, 2])
+    expect(
+        is_sorted([]) and is_sorted([7]) and is_sorted([1, 2, 2, 3]),
+        "is_sorted отверг упорядоченный вход",
+    )
+    expect(not is_sorted([3, 1, 2]), "is_sorted пропустил нарушение порядка")
+    expect(
+        same_multiset([], []) and same_multiset([2, 1, 2], [1, 2, 2]),
+        "same_multiset отверг перестановку",
+    )
+    expect(
+        not same_multiset([1, 1, 2], [1, 2, 2]),
+        "same_multiset не заметил разную кратность",
+    )
+    # заведомо неверные выходы: каждый должен нарушать именно свои инварианты
+    broken = [
+        ([3, 1, 2], [1, 2, 3], []),  # верный выход
+        ([3, 1, 2], [3, 1, 2], ["инвариант 1"]),  # перестановка, но не упорядочен
+        ([3, 1, 3], [1, 3], ["инвариант 2"]),  # упорядочен, но потерян элемент
+        ([2, 1], [1, 2, 2], ["инвариант 2"]),  # упорядочен, но лишний элемент
+        ([2, 1], [1, 1], ["инвариант 2"]),  # длина та же, элемент подменён
+        ([2, 1], [3, 0], ["инвариант 1", "инвариант 2"]),  # нарушены оба
+    ]
+    for original, result, expected in broken:
+        expect(
+            violated(original, result) == expected,
+            f"check_invariants({original}, {result}) вернул "
+            f"{violated(original, result)}, ожидалось {expected}",
+        )
     rng = random.Random(0)
     for _ in range(100):  # сверка помощников с эталоном стандартной библиотеки
         a = [rng.randint(-20, 20) for _ in range(rng.randint(0, 30))]
-        assert is_sorted(sorted(a))          # эталон sorted() упорядочен
-        assert same_multiset(a, sorted(a))   # эталон — перестановка входа
+        expect(is_sorted(sorted(a)), f"эталон sorted() не упорядочен: {a}")
+        expect(not check_invariants(a, sorted(a)), f"эталон отвергнут: {a}")
+        # «сортировка» без дубликатов всегда упорядочена — ловит её только инвариант 2
+        has_dups = len(set(a)) < len(a)
+        expect(
+            violated(a, sorted(set(a))) == (["инвариант 2"] if has_dups else []),
+            f"потеря дубликатов не обнаружена: {a}",
+        )
+        # неотсортированная копия — перестановка, ловит её только инвариант 1
+        expect(
+            violated(a, a) == ([] if a == sorted(a) else ["инвариант 1"]),
+            f"нарушение порядка не обнаружено: {a}",
+        )
     print("self_check: OK")
 
 
@@ -177,9 +247,9 @@ def main() -> None:
     random.seed(seed)
     self_check()
     rng = random.Random(seed)
-    run_representative_tests(rng)          # шаги 1–2
+    run_representative_tests(rng)  # шаги 1–2
     compare_with_reference(rng, runs=300)  # шаг 3
-    run_benchmarks(seed)                   # шаг 4
+    run_benchmarks(seed)  # шаг 4
     # TODO: по итогам шагов 1–4 сформулировать в отчёте вердикт о применимости
     # TODO: (принять / принять с доработкой / отклонить), исправить дефекты в копии
     # TODO: файла и подтвердить исправление повторной полной верификацией.
