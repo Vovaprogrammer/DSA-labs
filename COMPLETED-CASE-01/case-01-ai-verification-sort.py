@@ -16,6 +16,7 @@ import argparse
 import importlib.util
 import random
 import statistics
+import sys
 import time
 from collections import Counter
 from pathlib import Path
@@ -85,6 +86,11 @@ def check_invariants(original: list[int], result: list[int]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+# Большой размер для вырожденных классов: заявленному стеку O(log n) на нём
+# хватает ~11 вызовов, а сам размер вдвое больше предела рекурсии Python.
+LARGE_N = 2 * sys.getrecursionlimit()
+
+
 def representative_cases(rng: random.Random) -> list[tuple[str, list[int]]]:
     """Именованные тестовые входы по классам методики.
 
@@ -92,16 +98,70 @@ def representative_cases(rng: random.Random) -> list[tuple[str, list[int]]]:
     вырожденные (все элементы равны, уже отсортированный, обратно
     отсортированный); типовые случайные с дубликатами и отрицательными
     числами (генерируются через rng — seed по варианту).
+
+    Вырожденные классы — в двух размерах: 10 (выход виден целиком) и LARGE_N.
+    Отсортированный и обратный входы составлены из различных чисел, а
+    случайный вход есть и без дубликатов, и с ними — так каждый класс
+    проверяет одно свойство входа, и дефекты не смешиваются.
     """
-    # TODO: вернуть список пар (название класса, вход)
-    raise NotImplementedError
+
+    def distinct(n: int) -> list[int]:
+        """n различных чисел из [-10⁶, 10⁶) в случайном порядке."""
+        return rng.sample(range(-(10**6), 10**6), n)
+
+    cases = [
+        ("граничный: пустой", []),
+        ("граничный: один элемент", [7]),
+        ("граничный: два по возрастанию", [1, 2]),
+        ("граничный: два по убыванию", [2, 1]),
+        ("граничный: два равных", [5, 5]),
+    ]
+    for n in (10, LARGE_N):
+        cases += [
+            ("вырожденный: все равны", [3] * n),
+            ("вырожденный: отсортированный", sorted(distinct(n))),
+            ("вырожденный: обратный", sorted(distinct(n), reverse=True)),
+        ]
+    cases.append(("типовой: случайный без дубликатов", distinct(1000)))
+    for n, span in ((10, 5), (100, 50), (1000, 1000)):
+        data = [rng.randint(-span, span) for _ in range(n)]
+        cases.append(("типовой: случайный с дубликатами", data))
+    return cases
 
 
 def run_representative_tests(rng: random.Random) -> None:
-    """Прогоняет quicksort по всем классам входов и печатает нарушения инвариантов."""
-    # TODO: для каждого входа вызвать quicksort и check_invariants;
-    # TODO: зафиксировать, какой класс входов вскрывает какой дефект.
-    raise NotImplementedError
+    """Прогоняет quicksort по всем классам входов и печатает нарушения инвариантов.
+
+    Кроме двух инвариантов проверяется заявленное в docstring свойство
+    «вход не меняется», а аварийное завершение тоже считается нарушением.
+    В конце — сводка: какое нарушение какими классами входов вскрыто.
+    """
+    print("\nШаг 2. Репрезентативные тесты")
+    found: dict[str, list[str]] = {}
+    for name, data in representative_cases(rng):
+        before = list(data)
+        result = None
+        try:
+            result = quicksort(data)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            problems = [f"аварийное завершение: {type(exc).__name__}"]
+        else:
+            problems = check_invariants(before, result)
+        if data != before:
+            problems.append("вход изменён")
+        print(f"  {name:<34} n={len(before):<5} {'; '.join(problems) or 'OK'}")
+        if problems and result is not None and len(before) <= 10:
+            print(f"  {'':<34} {before} -> {result}")
+        for problem in problems:
+            # ключ сводки — вид нарушения без подробностей
+            found.setdefault(problem.split(" (")[0], []).append(
+                f"{name}, n={len(before)}"
+            )
+    print("Какие классы входов вскрыли нарушения:")
+    for problem, cases in found.items():
+        print(f"  {problem} — входов: {len(cases)}")
+        for case in cases:
+            print(f"    {case}")
 
 
 # ---------------------------------------------------------------------------
