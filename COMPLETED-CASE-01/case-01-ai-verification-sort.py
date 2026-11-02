@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""ДЗ 1. Верификация ИИ-сгенерированной сортировки — стартовая заготовка.
+"""ДЗ 1. Верификация ИИ-сгенерированной сортировки.
 
-Заготовка — это каркас, а не решение: заполните все TODO самостоятельно
-в соответствии с КИМ-01 (Cases) и методикой верификации по шагам 1–4
-(docs/ai-verification.md). Проверяемый код лежит рядом, в dz01-ai-code.py;
-исправлять его до завершения верификации запрещено.
+Проверяемый код — dz01-ai-code.py (quicksort от ИИ-ассистента, не изменяется),
+исправленная копия — dz01-ai-code-fixed.py. Верификация по шагам 1–4
+docs/ai-verification.md: инварианты и самопроверка помощников,
+репрезентативные тесты по классам входов, сверка с sorted() с сокращением
+контрпримера и трассировкой строк, бенчмарк на случайном, упорядоченном и
+обратном входах (время, глубина рекурсии, память) с log-log графиком и JSON.
 
-Запуск: python dz01-verification-starter.py --variant N
+Запуск:
+    python COMPLETED-CASE-01/case-01-ai-verification-sort.py --variant 14
+    python COMPLETED-CASE-01/case-01-ai-verification-sort.py --variant 14 --fixed
 """
+
+# имя файла с дефисами задано курсом, поэтому проверка имени модуля отключена
+# pylint: disable=invalid-name
 
 from __future__ import annotations
 
@@ -38,11 +45,12 @@ plt.switch_backend("Agg")  # рисуем сразу в файл, окно не 
 # модуль загружается по пути через importlib.
 
 AI_CODE_PATH = Path(__file__).with_name("dz01-ai-code.py")
+FIXED_CODE_PATH = Path(__file__).with_name("dz01-ai-code-fixed.py")
 
 
-def load_quicksort():
-    """Загружает функцию quicksort из соседнего файла dz01-ai-code.py."""
-    spec = importlib.util.spec_from_file_location("dz01_ai_code", AI_CODE_PATH)
+def load_quicksort(path: Path = AI_CODE_PATH):
+    """Загружает функцию quicksort из соседнего файла (по умолчанию — ИИ-код)."""
+    spec = importlib.util.spec_from_file_location(path.stem.replace("-", "_"), path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.quicksort
@@ -173,6 +181,8 @@ def run_representative_tests(rng: random.Random) -> None:
                 f"{name}, n={len(before)}"
             )
     print("Какие классы входов вскрыли нарушения:")
+    if not found:
+        print("  нарушений нет")
     for problem, cases in found.items():
         print(f"  {problem} — входов: {len(cases)}")
         for case in cases:
@@ -601,8 +611,13 @@ def mark_depth_axis(ax) -> None:
     guide(ax, SIZES, math.log2, (SIZES[0], math.log2(SIZES[0])), "log₂ n")
 
 
-def plot_results(records: list[dict], summary: dict, variant: int) -> Path:
-    """Два log-log графика: время и наибольшая глубина рекурсии от n."""
+def plot_results(
+    records: list[dict], summary: dict, variant: int, fixed: bool = False
+) -> Path:
+    """Два log-log графика: время и наибольшая глубина рекурсии от n.
+
+    fixed=True — замеры исправленной копии: другой заголовок и имя файла.
+    """
     PLOTS_DIR.mkdir(exist_ok=True)
     fig, (ax_t, ax_d) = plt.subplots(1, 2, figsize=(13, 5.8))
     for kind in INPUT_KINDS:
@@ -613,8 +628,9 @@ def plot_results(records: list[dict], summary: dict, variant: int) -> Path:
     style_axes(ax_d, "Наибольшая глубина рекурсии", "глубина, вызовов")
     # одна общая легенда под графиками: серии на обоих одинаковые
     handles, labels = ax_t.get_legend_handles_labels()
-    handles.append(Line2D([], [], ls="", marker="x", ms=8, mew=2, color=MUTED))
-    labels.append("глубина, на которой случился RecursionError")
+    if any(r["error"] for r in records):
+        handles.append(Line2D([], [], ls="", marker="x", ms=8, mew=2, color=MUTED))
+        labels.append("глубина, на которой случился RecursionError")
     fig.legend(
         handles,
         labels,
@@ -624,25 +640,31 @@ def plot_results(records: list[dict], summary: dict, variant: int) -> Path:
         fontsize=9,
         labelcolor=INK,
     )
+    name = "исправленный quicksort" if fixed else "ИИ-quicksort"
     fig.suptitle(
-        f"ДЗ 1, вариант {variant}: ИИ-quicksort на случайном, упорядоченном и "
+        f"ДЗ 1, вариант {variant}: {name} на случайном, упорядоченном и "
         "обратном входах",
         color=INK,
         fontsize=12,
     )
     fig.tight_layout(rect=(0, 0.09, 1, 1))  # место снизу под легенду
-    path = PLOTS_DIR / f"case01_variant{variant}_loglog.png"
+    suffix = "_fixed" if fixed else ""
+    path = PLOTS_DIR / f"case01_variant{variant}{suffix}_loglog.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
     print(f"\nграфик: {path}")
     return path
 
 
-def save_json(records: list[dict], summary: dict, variant: int) -> Path:
+def save_json(
+    records: list[dict], summary: dict, variant: int, fixed: bool = False
+) -> Path:
     """Сырые результаты замеров и сводка — в JSON рядом с графиком."""
     PLOTS_DIR.mkdir(exist_ok=True)
-    path = PLOTS_DIR / f"case01_variant{variant}_results.json"
+    suffix = "_fixed" if fixed else ""
+    path = PLOTS_DIR / f"case01_variant{variant}{suffix}_results.json"
     payload = {
+        "target": (FIXED_CODE_PATH if fixed else AI_CODE_PATH).name,
         "variant": variant,
         "seed": 30 + variant,
         "python": sys.version.split()[0],
@@ -722,22 +744,30 @@ def self_check() -> None:
 
 
 def main() -> None:
+    """Полная верификация по шагам 1–4: ИИ-код или (--fixed) исправленная копия."""
+    global quicksort  # pylint: disable=global-statement
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--variant", type=int, required=True, help="номер варианта")
+    ap.add_argument(
+        "--fixed",
+        action="store_true",
+        help="проверить исправленную копию dz01-ai-code-fixed.py",
+    )
     args = ap.parse_args()
     seed = 30 + args.variant  # вариантность — см. docs/reproducibility.md
-    random.seed(seed)
+    random.seed(seed)  # от него зависит и случайный опорный исправленной копии
+    if args.fixed:
+        # повторная верификация: те же проверки и входы, другой проверяемый файл
+        quicksort = load_quicksort(FIXED_CODE_PATH)
+    print(f"проверяемый код: {Path(quicksort.__code__.co_filename).name}")
     self_check()
     rng = random.Random(seed)
     run_representative_tests(rng)  # шаги 1–2
     compare_with_reference(rng, runs=300)  # шаг 3
     records = run_benchmarks(seed)  # шаг 4
     summary = summarize(records)
-    plot_results(records, summary, args.variant)
-    save_json(records, summary, args.variant)
-    # TODO: по итогам шагов 1–4 сформулировать в отчёте вердикт о применимости
-    # TODO: (принять / принять с доработкой / отклонить), исправить дефекты в копии
-    # TODO: файла и подтвердить исправление повторной полной верификацией.
+    plot_results(records, summary, args.variant, args.fixed)
+    save_json(records, summary, args.variant, args.fixed)
 
 
 if __name__ == "__main__":
