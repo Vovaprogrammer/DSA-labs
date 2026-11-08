@@ -497,7 +497,8 @@ def self_check() -> None:
         except SelfCheckError as err:
             print(f"  {name}: ОШИБКА — {err}")
             failed += 1
-        except Exception:  # noqa: BLE001 — падение реализации тоже результат проверки
+        # падение реализации — тоже результат проверки
+        except Exception:  # pylint: disable=broad-exception-caught
             print(f"  {name}: ИСКЛЮЧЕНИЕ")
             traceback.print_exc(file=sys.stdout)
             failed += 1
@@ -542,25 +543,25 @@ def run_benchmarks(seed: int) -> None:
         for k in keys:
             tree.insert(k)
 
-        def search_bst() -> None:
+        # значения по умолчанию фиксируют tree, keys и queries текущего n
+        def search_bst(tree: BST = tree, queries: list[int] = queries) -> None:
             for q in queries:
                 tree.search(q)
 
-        def search_list() -> None:
+        def search_list(keys: list[int] = keys, queries: list[int] = queries) -> None:
             for q in queries:
-                q in keys  # линейный поиск для сравнения
+                _ = q in keys  # линейный поиск для сравнения
 
         print(
             f"{n:>8} {tree.height():>7} "
             f"{bench(search_bst):>10.6f} {bench(search_list):>10.6f}"
         )
-    # TODO: оформить результаты таблицей/графиком в отчёте;
-    # TODO: сопоставить рост t_bst с высотой дерева, а t_list — с n;
     # TODO: в отчёте объяснить деградацию BST на упорядоченных ключах
     #       и гарантию высоты AVL-дерева (не более 1,44*log2(n)) — мостик к ДЗ 2.
 
 
 def main() -> None:
+    """Самопроверка, затем бенчмарк поиска BST против списка."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--variant", type=int, required=True, help="номер варианта")
     args = ap.parse_args()
