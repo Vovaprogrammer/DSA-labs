@@ -171,13 +171,24 @@ class BST:
 
         Пустое дерево имеет высоту -1, дерево из одного узла — 0.
         """
-        # TODO
-        raise NotImplementedError
+
+        def _height(node: Node | None) -> int:
+            if node is None:
+                return -1  # пустое поддерево
+            # post-order: сначала высоты детей, затем узла
+            return 1 + max(_height(node.left), _height(node.right))
+
+        return _height(self.root)
 
     def size(self) -> int:
         """Число узлов в дереве."""
-        # TODO
-        raise NotImplementedError
+
+        def _size(node: Node | None) -> int:
+            if node is None:
+                return 0
+            return 1 + _size(node.left) + _size(node.right)
+
+        return _size(self.root)
 
 
 # ---------------------------------------------------------------------------
