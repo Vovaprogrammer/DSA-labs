@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""ДЗ 2. Эксперимент: высота BST и деградация операций — стартовая заготовка.
+"""ДЗ 2. Эксперимент: высота BST и деградация операций.
 
-Заготовка — это каркас, а не решение: заполните все TODO самостоятельно
-в соответствии с КИМ-02 (Cases) и правилами использования генеративного ИИ
-(docs/ai-verification.md). Класс BST из ЛР 5 рекомендуется подключить как
-модуль; ниже дан минимальный узел и сигнатуры на случай автономного запуска.
+Высота и средняя глубина узла BST на случайном и упорядоченном потоках
+вставок, время поиска в обоих деревьях и графики h(n), d(n) на фоне log2(n)
+и n. Вставка и обходы итеративные: на упорядоченном потоке дерево — цепочка
+до 10^4 узлов. Перед замерами self_check проверяет измерительные функции.
 
-Запуск: python dz02-bst-height-starter.py --variant N
+Запуск: python COMPLETED-CASE-02/case-02-bst-height-experiment.py --variant N
 """
+
+# pylint: disable=invalid-name  # имя файла с дефисами задано структурой репозитория
 
 from __future__ import annotations
 
@@ -29,7 +31,7 @@ import matplotlib.pyplot as plt
 # ---------------------------------------------------------------------------
 
 
-class Node:
+class Node:  # pylint: disable=too-few-public-methods  # узел — только данные
     """Узел BST: ключ и ссылки на левое и правое поддеревья."""
 
     __slots__ = ("key", "left", "right")
@@ -143,34 +145,68 @@ def inorder_keys(root: Node | None) -> list[int]:
 # ---------------------------------------------------------------------------
 
 
+class SelfCheckError(Exception):
+    """Нарушен контракт измерительной функции."""
+
+
+def expect(condition: bool, message: str) -> None:
+    """Явная проверка вместо assert: assert-ы исчезают при запуске python -O."""
+    if not condition:
+        raise SelfCheckError(message)
+
+
 def self_check() -> None:
     """Граничные деревья, аналитические значения, сверка с эталоном sorted()."""
-    # Граничные случаи: пустое дерево и один узел
-    assert tree_height(None) == -1
-    assert avg_depth(None) == 0.0
     single = build_bst([42])
-    assert tree_height(single) == 0
-    assert count_nodes(single) == 1
-
-    # Типовой случай: [2, 1, 3] — идеально сбалансированное дерево из 3 узлов
-    small = build_bst([2, 1, 3])
-    assert tree_height(small) == 1
-    assert sum_depths(small) == 2  # 0 (корень) + 1 + 1
-
-    # Вырожденный случай: упорядоченные ключи 1..n дают "список"
-    n = 100
-    degenerate = build_bst(list(range(1, n + 1)))
-    assert tree_height(degenerate) == n - 1
-    assert avg_depth(degenerate) == (n - 1) / 2  # (0+1+...+(n-1)) / n
+    small = build_bst([2, 1, 3])  # идеально сбалансированное дерево из 3 узлов
+    cases = [  # (что проверяется, получено, ожидалось)
+        # Граничные случаи: пустое дерево и один узел
+        ("tree_height(пустое)", tree_height(None), -1),
+        ("count_nodes(пустое)", count_nodes(None), 0),
+        ("avg_depth(пустое)", avg_depth(None), 0.0),
+        ("inorder_keys(пустое)", inorder_keys(None), []),
+        ("tree_height([42])", tree_height(single), 0),
+        ("count_nodes([42])", count_nodes(single), 1),
+        ("avg_depth([42])", avg_depth(single), 0.0),
+        # Типовой случай
+        ("tree_height([2, 1, 3])", tree_height(small), 1),
+        ("sum_depths([2, 1, 3])", sum_depths(small), 2),  # 0 (корень) + 1 + 1
+        # Дубликаты игнорируются
+        ("inorder_keys([5, 3, 5, 3])", inorder_keys(build_bst([5, 3, 5, 3])), [3, 5]),
+    ]
+    # Вырожденный случай: упорядоченные ключи дают цепочку (вправо при 1..n,
+    # влево при n..1); n больше предела рекурсии 1000 — проверка итеративности
+    n = 2000
+    for name, keys in (
+        ("1..n", list(range(1, n + 1))),
+        ("n..1", list(range(n, 0, -1))),
+    ):
+        chain = build_bst(keys)
+        cases += [
+            (f"tree_height({name}), n = {n}", tree_height(chain), n - 1),
+            (f"avg_depth({name}), n = {n}", avg_depth(chain), (n - 1) / 2),
+            (
+                f"inorder_keys({name}) == sorted",
+                inorder_keys(chain) == sorted(keys),
+                True,
+            ),
+        ]
+    for what, got, want in cases:
+        expect(got == want, f"{what} = {got}, ожидалось {want}")
 
     # Сверка с эталоном стандартной библиотеки: инвариант BST —
     # in-order-обход совпадает с sorted() на случайных наборах ключей
     rng = random.Random(0)
-    for _ in range(200):
+    for run in range(1, 201):
         keys = rng.sample(range(-1000, 1000), rng.randint(1, 60))
         root = build_bst(keys)
-        assert inorder_keys(root) == sorted(keys)
-        assert count_nodes(root) == len(keys)
+        expect(
+            inorder_keys(root) == sorted(keys),
+            f"прогон {run}: inorder_keys != sorted для ключей {keys}",
+        )
+        expect(
+            count_nodes(root) == len(keys), f"прогон {run}: count_nodes != {len(keys)}"
+        )
     print("self_check: OK")
 
 
@@ -266,6 +302,7 @@ def run_experiment(seed: int) -> None:
 
 
 def main() -> None:
+    """Самопроверка, затем эксперимент по seed варианта."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--variant", type=int, required=True, help="номер варианта")
     args = ap.parse_args()
