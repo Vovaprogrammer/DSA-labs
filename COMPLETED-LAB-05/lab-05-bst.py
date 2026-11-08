@@ -7,7 +7,7 @@
 (docs/ai-verification.md). Класс BST понадобится повторно в ДЗ 2
 (Cases/kim-02-bst-height-experiment.md) — держите его чистым и переносимым.
 
-Запуск: python lab05-bst-starter.py --variant N
+Запуск: python COMPLETED-LAB-05/lab-05-bst.py --variant N
 """
 
 from __future__ import annotations
@@ -36,38 +36,6 @@ class Node:
         self.right: Node | None = None
 
 
-def _insert(node: Node | None, key: int) -> Node:
-    """Вставка key в поддерево node; возвращает корень поддерева."""
-    if node is None:
-        return Node(key)  # новый лист
-    if key < node.key:
-        node.left = _insert(node.left, key)
-    elif key > node.key:
-        node.right = _insert(node.right, key)
-    return node  # равный ключ — пропуск
-
-
-def _delete(node: Node | None, key: int) -> Node | None:
-    """Удаление key из поддерева node; возвращает новый корень поддерева."""
-    if node is None:
-        return None  # ключа нет
-    if key < node.key:
-        node.left = _delete(node.left, key)
-    elif key > node.key:
-        node.right = _delete(node.right, key)
-    elif node.left is None:  # случаи 1 и 2
-        return node.right
-    elif node.right is None:  # случай 2
-        return node.left
-    else:  # случай 3
-        s = node.right
-        while s.left is not None:
-            s = s.left  # s — преемник
-        node.key = s.key
-        node.right = _delete(node.right, s.key)
-    return node
-
-
 class BST:
     """Бинарное дерево поиска без дубликатов ключей.
 
@@ -82,6 +50,17 @@ class BST:
 
     def insert(self, key: int) -> None:
         """Вставка ключа; повторная вставка существующего ключа игнорируется."""
+
+        def _insert(node: Node | None, key: int) -> Node:
+            # возвращает корень поддерева после вставки
+            if node is None:
+                return Node(key)  # новый лист
+            if key < node.key:
+                node.left = _insert(node.left, key)
+            elif key > node.key:
+                node.right = _insert(node.right, key)
+            return node  # равный ключ — пропуск
+
         self.root = _insert(self.root, key)
 
     def search(self, key: int) -> bool:
@@ -105,29 +84,85 @@ class BST:
            поддерева) и удалить преемника из правого поддерева.
         Отсутствующий ключ игнорируется.
         """
+
+        def _delete(node: Node | None, key: int) -> Node | None:
+            # возвращает новый корень поддерева после удаления
+            if node is None:
+                return None  # ключа нет
+            if key < node.key:
+                node.left = _delete(node.left, key)
+            elif key > node.key:
+                node.right = _delete(node.right, key)
+            elif node.left is None:  # случаи 1 и 2
+                return node.right
+            elif node.right is None:  # случай 2
+                return node.left
+            else:  # случай 3
+                s = node.right
+                while s.left is not None:
+                    s = s.left  # s — преемник
+                node.key = s.key
+                node.right = _delete(node.right, s.key)
+            return node
+
         self.root = _delete(self.root, key)
 
     # -- Обходы --------------------------------------------------------------
 
     def in_order(self) -> list[int]:
-        """Симметричный обход (лево — узел — право): рекурсивно."""
-        # TODO: для корректного BST результат — возрастающая последовательность
-        raise NotImplementedError
+        """Симметричный обход (лево — узел — право): рекурсивно.
+
+        Для корректного BST результат — строго возрастающая последовательность.
+        """
+        out: list[int] = []
+
+        def walk(node: Node | None) -> None:
+            if node is not None:
+                walk(node.left)
+                out.append(node.key)  # между поддеревьями
+                walk(node.right)
+
+        walk(self.root)
+        return out
 
     def pre_order(self) -> list[int]:
         """Прямой обход (узел — лево — право): рекурсивно."""
-        # TODO
-        raise NotImplementedError
+        out: list[int] = []
+
+        def walk(node: Node | None) -> None:
+            if node is not None:
+                out.append(node.key)  # до поддеревьев
+                walk(node.left)
+                walk(node.right)
+
+        walk(self.root)
+        return out
 
     def post_order(self) -> list[int]:
         """Обратный обход (лево — право — узел): рекурсивно."""
-        # TODO
-        raise NotImplementedError
+        out: list[int] = []
+
+        def walk(node: Node | None) -> None:
+            if node is not None:
+                walk(node.left)
+                walk(node.right)
+                out.append(node.key)  # после поддеревьев
+
+        walk(self.root)
+        return out
 
     def level_order(self) -> list[int]:
         """Обход в ширину по уровням: итеративно через очередь (deque)."""
-        # TODO: использовать collections.deque, без рекурсии
-        raise NotImplementedError
+        out: list[int] = []
+        queue = deque([self.root] if self.root is not None else [])
+        while queue:
+            node = queue.popleft()  # первым пришёл — первым обработан
+            out.append(node.key)
+            if node.left is not None:
+                queue.append(node.left)
+            if node.right is not None:
+                queue.append(node.right)
+        return out
 
     # -- Характеристики дерева ----------------------------------------------
 
