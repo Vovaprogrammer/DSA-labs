@@ -263,8 +263,7 @@ def run_experiment(seed: int) -> None:
     path = PLOTS_DIR / f"case02_variant{seed - 30}_loglog.png"
     plot_results((h_rand, h_ord), (d_rand, d_ord), path)
     print(f"график: {path}")
-    # TODO: в отчёте привести справку об AVL (высота <= 1.44*log2(n), цена
-    #       балансировки) и вывод-рекомендацию о выборе структуры
+    # TODO: в отчёте привести вывод-рекомендацию о выборе структуры
 
 
 def main() -> None:
