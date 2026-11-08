@@ -180,6 +180,7 @@ def self_check() -> None:
 
 SIZES = [100, 300, 1_000, 3_000, 10_000]  # геометрический шаг, n до 10^4
 REPEATS = 5
+QUERIES = 1_000  # число поисков на один замер
 PLOTS_DIR = Path(__file__).with_name("plots")
 
 
@@ -232,11 +233,12 @@ def plot_results(heights: tuple, depths: tuple, path: Path) -> None:
 
 
 def run_experiment(seed: int) -> None:
-    """Таблица: n, высота и средняя глубина для двух потоков, опорные величины."""
+    """Таблица: n, высота, средняя глубина и время поиска для двух потоков; графики."""
     rng = random.Random(seed)
     header = (
         f"{'n':>7} {'h_случ':>8} {'d_случ':>8} "
-        f"{'h_упор':>8} {'d_упор':>8} {'log2(n)':>8}"
+        f"{'h_упор':>8} {'d_упор':>8} {'log2(n)':>8} "
+        f"{'t_случ, мс':>11} {'t_упор, мс':>11}"
     )
     print(header)
     h_rand, d_rand, h_ord, d_ord = [], [], [], []  # значения для графиков
@@ -247,19 +249,22 @@ def run_experiment(seed: int) -> None:
         d_rand.append(avg_depth(root_rand))
         h_ord.append(tree_height(root_ord))
         d_ord.append(avg_depth(root_ord))
+        # одинаковые запросы для обоих деревьев; берутся из глобального random
+        # (seed задан в main), чтобы не сдвигать rng и ключи следующих деревьев
+        queries = random.choices(range(10 * n), k=QUERIES)
+        t_rand = bench_search(root_rand, queries)
+        t_ord = bench_search(root_ord, queries)
         print(
             f"{n:>7} {h_rand[-1]:>8} {d_rand[-1]:>8.1f} "
-            f"{h_ord[-1]:>8} {d_ord[-1]:>8.1f} {math.log2(n):>8.1f}"
+            f"{h_ord[-1]:>8} {d_ord[-1]:>8.1f} {math.log2(n):>8.1f} "
+            f"{t_rand * 1e3:>11.3f} {t_ord * 1e3:>11.2f}"
         )
-        # TODO: замерить bench_search для обоих деревьев на одинаковых
-        #       запросах и включить сравнение времени в отчёт
     PLOTS_DIR.mkdir(exist_ok=True)
     path = PLOTS_DIR / f"case02_variant{seed - 30}_loglog.png"
     plot_results((h_rand, h_ord), (d_rand, d_ord), path)
     print(f"график: {path}")
-    # TODO: в отчёте объяснить деградацию операций до O(n), привести справку
-    #       об AVL (высота <= 1.44*log2(n), цена балансировки) и
-    #       вывод-рекомендацию о выборе структуры
+    # TODO: в отчёте привести справку об AVL (высота <= 1.44*log2(n), цена
+    #       балансировки) и вывод-рекомендацию о выборе структуры
 
 
 def main() -> None:
