@@ -429,6 +429,51 @@ def check_against_reference() -> None:
         )
 
 
+def check_bst_invariant() -> None:
+    """Инвариант BST после каждой операции на случайных командах: in_order() строго
+    возрастает, и ключ каждого узла лежит в интервале, заданном его предками."""
+
+    def within(node: Node | None, low: float, high: float) -> bool:
+        # рекурсия с границами: левый ребёнок получает верхнюю границу — ключ узла,
+        # правый — нижнюю
+        if node is None:
+            return True
+        return (
+            low < node.key < high
+            and within(node.left, low, node.key)
+            and within(node.right, node.key, high)
+        )
+
+    inf = float("inf")
+    # Дерево из лекции 5: 7 больше 3, но лежит в левом поддереве 5. Сравнение только
+    # с детьми его пропускает, обе проверки должны поймать.
+    broken = BST()
+    broken.root = Node(5)
+    broken.root.left, broken.root.right = Node(3), Node(8)
+    broken.root.left.right = Node(7)
+    got = broken.in_order()
+    expect(got == [3, 7, 5, 8], f"in_order() дерева 5(3(-, 7), 8): {got}")
+    expect(not within(broken.root, -inf, inf), "границы не поймали 7 слева от 5")
+
+    rng = random.Random(1)
+    for run in range(1, 101):
+        tree = BST()
+        for step in range(1, rng.randint(1, 80) + 1):
+            k = rng.randint(-30, 30)
+            op = "insert" if rng.random() < 0.6 else "delete"
+            getattr(tree, op)(k)
+            where = f"прогон {run}, команда №{step} {op}({k})"
+            got = tree.in_order()
+            expect(
+                all(x < y for x, y in zip(got, got[1:])),
+                f"{where}: in_order() не возрастает строго: {got}",
+            )
+            expect(
+                within(tree.root, -inf, inf),
+                f"{where}: ключ узла вне интервала, заданного предками",
+            )
+
+
 def self_check() -> None:
     """Все проверки по разделам; при любой ошибке замеры не выполняются."""
     checks = (
@@ -438,6 +483,7 @@ def self_check() -> None:
         ("удаление", check_delete),
         ("удаление узла с двумя детьми", check_delete_two_children),
         ("сверка с эталоном set/sorted", check_against_reference),
+        ("инвариант BST после каждой операции", check_bst_invariant),
     )
     failed = 0
     print("self_check:")
@@ -457,8 +503,6 @@ def self_check() -> None:
             failed += 1
         else:
             print(f"  {name}: OK")
-    # TODO: добавить собственные проверки (например, инвариант BST после каждой
-    #       операции рекурсивной проверкой с границами) и описать их в отчёте.
     if failed:
         raise SystemExit(
             f"self_check: не пройдено разделов — {failed}; "
