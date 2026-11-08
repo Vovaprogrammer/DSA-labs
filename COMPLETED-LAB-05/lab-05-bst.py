@@ -9,6 +9,7 @@
 
 Запуск: python lab05-bst-starter.py --variant N
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,12 +36,45 @@ class Node:
         self.right: Node | None = None
 
 
+def _insert(node: Node | None, key: int) -> Node:
+    """Вставка key в поддерево node; возвращает корень поддерева."""
+    if node is None:
+        return Node(key)  # новый лист
+    if key < node.key:
+        node.left = _insert(node.left, key)
+    elif key > node.key:
+        node.right = _insert(node.right, key)
+    return node  # равный ключ — пропуск
+
+
+def _delete(node: Node | None, key: int) -> Node | None:
+    """Удаление key из поддерева node; возвращает новый корень поддерева."""
+    if node is None:
+        return None  # ключа нет
+    if key < node.key:
+        node.left = _delete(node.left, key)
+    elif key > node.key:
+        node.right = _delete(node.right, key)
+    elif node.left is None:  # случаи 1 и 2
+        return node.right
+    elif node.right is None:  # случай 2
+        return node.left
+    else:  # случай 3
+        s = node.right
+        while s.left is not None:
+            s = s.left  # s — преемник
+        node.key = s.key
+        node.right = _delete(node.right, s.key)
+    return node
+
+
 class BST:
     """Бинарное дерево поиска без дубликатов ключей.
 
     Инвариант: для каждого узла все ключи левого поддерева меньше key,
-    все ключи правого — больше. Ожидаемая сложность операций: TODO
-    (выразить через высоту h и обосновать в отчёте).
+    все ключи правого — больше. Сложность insert, search и delete — O(h),
+    где h — высота дерева: каждая операция проходит один путь от корня вниз;
+    ⌊log₂ n⌋ ≤ h ≤ n − 1 (цепочка на упорядоченных ключах).
     """
 
     def __init__(self) -> None:
@@ -48,13 +82,19 @@ class BST:
 
     def insert(self, key: int) -> None:
         """Вставка ключа; повторная вставка существующего ключа игнорируется."""
-        # TODO: спуск от корня до свободной позиции с сохранением инварианта
-        raise NotImplementedError
+        self.root = _insert(self.root, key)
 
     def search(self, key: int) -> bool:
         """Возвращает True, если ключ есть в дереве."""
-        # TODO: спуск от корня со сравнением ключей
-        raise NotImplementedError
+        cur = self.root
+        while cur is not None:
+            if key == cur.key:
+                return True
+            if key < cur.key:
+                cur = cur.left  # меньшие ключи — слева
+            else:
+                cur = cur.right  # большие — справа
+        return False
 
     def delete(self, key: int) -> None:
         """Удаление ключа. Обработать три случая:
@@ -65,8 +105,7 @@ class BST:
            поддерева) и удалить преемника из правого поддерева.
         Отсутствующий ключ игнорируется.
         """
-        # TODO: реализовать все три случая
-        raise NotImplementedError
+        self.root = _delete(self.root, key)
 
     # -- Обходы --------------------------------------------------------------
 
@@ -132,7 +171,9 @@ def build(keys) -> BST:
 def expect_search(tree: BST, key: int, present: bool, where: str) -> None:
     """search(key) обязан вернуть именно True или False."""
     got = tree.search(key)
-    expect(got is present, f"{where}: search({key}) вернул {got!r}, ожидалось {present}")
+    expect(
+        got is present, f"{where}: search({key}) вернул {got!r}, ожидалось {present}"
+    )
 
 
 TRAVERSALS = ("in_order", "pre_order", "post_order", "level_order")
@@ -162,9 +203,24 @@ KNOWN_TREES = {
 # преемником, pre_order после замены предшественником). В последних двух случаях
 # у преемника (предшественника) есть свой ребёнок.
 TWO_CHILDREN_CASES = [
-    ((8, 3, 10, 1, 6, 14, 4, 7, 13), 3, [8, 4, 1, 6, 7, 10, 14, 13], [8, 1, 6, 4, 7, 10, 14, 13]),
-    ((8, 3, 10, 1, 6, 14, 4, 7, 13), 6, [8, 3, 1, 7, 4, 10, 14, 13], [8, 3, 1, 4, 7, 10, 14, 13]),
-    ((8, 3, 10, 1, 6, 14, 4, 7, 13), 8, [10, 3, 1, 6, 4, 7, 14, 13], [7, 3, 1, 6, 4, 10, 14, 13]),
+    (
+        (8, 3, 10, 1, 6, 14, 4, 7, 13),
+        3,
+        [8, 4, 1, 6, 7, 10, 14, 13],
+        [8, 1, 6, 4, 7, 10, 14, 13],
+    ),
+    (
+        (8, 3, 10, 1, 6, 14, 4, 7, 13),
+        6,
+        [8, 3, 1, 7, 4, 10, 14, 13],
+        [8, 3, 1, 4, 7, 10, 14, 13],
+    ),
+    (
+        (8, 3, 10, 1, 6, 14, 4, 7, 13),
+        8,
+        [10, 3, 1, 6, 4, 7, 14, 13],
+        [7, 3, 1, 6, 4, 10, 14, 13],
+    ),
     ((50, 30, 70, 60, 80, 65), 50, [60, 30, 70, 65, 80], [30, 70, 60, 65, 80]),
     ((50, 30, 70, 60, 80, 65), 70, [50, 30, 80, 60, 65], [50, 30, 65, 60, 80]),
 ]
@@ -183,11 +239,17 @@ def check_insert_search() -> None:
     for k in range(11):
         expect_search(tree, k, k in keys, f"дерево из вставок {keys}")
     got = tree.in_order()
-    expect(got == sorted(keys), f"in_order() после вставок {keys}: {got}, ожидалось {sorted(keys)}")
+    expect(
+        got == sorted(keys),
+        f"in_order() после вставок {keys}: {got}, ожидалось {sorted(keys)}",
+    )
     tree.insert(5)
     tree.insert(1)
     got = tree.in_order()
-    expect(got == sorted(keys), f"повторная вставка 5 и 1 изменила дерево: in_order() = {got}")
+    expect(
+        got == sorted(keys),
+        f"повторная вставка 5 и 1 изменила дерево: in_order() = {got}",
+    )
 
 
 def check_traversals() -> None:
@@ -200,16 +262,22 @@ def check_traversals() -> None:
         tree = build(keys)
         for name in TRAVERSALS:
             got = getattr(tree, name)()
-            expect(got == answer[name],
-                   f"{name}() дерева из вставок {list(keys)}: {got}, ожидалось {answer[name]}")
+            expect(
+                got == answer[name],
+                f"{name}() дерева из вставок {list(keys)}: {got}, ожидалось {answer[name]}",
+            )
 
 
 def check_height_size() -> None:
     """Высота в рёбрах (пустое дерево -1, один узел 0) и число узлов."""
     cases = [("пустое дерево", (), -1, 0), ("один узел 5", (5,), 0, 1)]
-    cases += [(f"дерево из вставок {list(keys)}", keys, answer["height"], answer["size"])
-              for keys, answer in KNOWN_TREES.items()]
-    cases.append(("ключи 1, 2, …, 50 по возрастанию (цепочка)", tuple(range(1, 51)), 49, 50))
+    cases += [
+        (f"дерево из вставок {list(keys)}", keys, answer["height"], answer["size"])
+        for keys, answer in KNOWN_TREES.items()
+    ]
+    cases.append(
+        ("ключи 1, 2, …, 50 по возрастанию (цепочка)", tuple(range(1, 51)), 49, 50)
+    )
     for where, keys, height, size in cases:
         tree = build(keys)
         got_h, got_s = tree.height(), tree.size()
@@ -227,20 +295,31 @@ def check_delete() -> None:
     keys = [5, 2, 8, 1, 3]
     tree = build(keys)
     left = set(keys)
-    steps = [(1, "лист 1"), (2, "узел 2 с одним ребёнком"), (5, "корень 5 с двумя детьми"),
-             (4, "отсутствующий ключ 4"), (3, "ключ 3"), (8, "последний ключ 8")]
+    steps = [
+        (1, "лист 1"),
+        (2, "узел 2 с одним ребёнком"),
+        (5, "корень 5 с двумя детьми"),
+        (4, "отсутствующий ключ 4"),
+        (3, "ключ 3"),
+        (8, "последний ключ 8"),
+    ]
     for k, what in steps:
         tree.delete(k)
         left.discard(k)
         where = f"дерево из вставок {keys}, удаление: {what}"
         got = tree.in_order()
-        expect(got == sorted(left), f"{where}: in_order() = {got}, ожидалось {sorted(left)}")
+        expect(
+            got == sorted(left),
+            f"{where}: in_order() = {got}, ожидалось {sorted(left)}",
+        )
         expect_search(tree, k, False, where)
         for rest in left:
             expect_search(tree, rest, True, where)
     got_h, got_s = tree.height(), tree.size()
-    expect(got_h == -1 and got_s == 0,
-           f"после удаления всех ключей: height() = {got_h}, size() = {got_s}, ожидалось -1 и 0")
+    expect(
+        got_h == -1 and got_s == 0,
+        f"после удаления всех ключей: height() = {got_h}, size() = {got_s}, ожидалось -1 и 0",
+    )
 
 
 def check_delete_two_children() -> None:
@@ -254,9 +333,11 @@ def check_delete_two_children() -> None:
         got = tree.in_order()
         expect(got == rest, f"{where}: in_order() = {got}, ожидалось {rest}")
         got = tree.pre_order()
-        expect(got in (by_successor, by_predecessor),
-               f"{where}: pre_order() = {got}; при замене преемником ожидалось {by_successor}, "
-               f"предшественником — {by_predecessor}")
+        expect(
+            got in (by_successor, by_predecessor),
+            f"{where}: pre_order() = {got}; при замене преемником ожидалось {by_successor}, "
+            f"предшественником — {by_predecessor}",
+        )
 
 
 def check_against_reference() -> None:
@@ -277,8 +358,11 @@ def check_against_reference() -> None:
                 op = f"delete({k})"
             # Инвариант BST: in-order даёт строго возрастающую последовательность ключей
             got = tree.in_order()
-            expect(got == sorted(etalon), f"прогон {run}, команда №{step} {op}: "
-                                          f"in_order() = {got}, эталон {sorted(etalon)}")
+            expect(
+                got == sorted(etalon),
+                f"прогон {run}, команда №{step} {op}: "
+                f"in_order() = {got}, эталон {sorted(etalon)}",
+            )
         where = f"прогон {run}, итоговое дерево"
         for k in range(-30, 31):
             expect_search(tree, k, k in etalon, where)
@@ -287,11 +371,16 @@ def check_against_reference() -> None:
         expect(got == n, f"{where}: size() = {got}, эталон {n}")
         for name in TRAVERSALS[1:]:
             got = getattr(tree, name)()
-            expect(sorted(got) == sorted(etalon), f"{where}: {name}() содержит не те ключи: {got}")
+            expect(
+                sorted(got) == sorted(etalon),
+                f"{where}: {name}() содержит не те ключи: {got}",
+            )
         got = tree.height()
         low, high = (-1, -1) if n == 0 else (n.bit_length() - 1, n - 1)
-        expect(low <= got <= high,
-               f"{where}: height() = {got} при {n} узлах, возможно от {low} до {high}")
+        expect(
+            low <= got <= high,
+            f"{where}: height() = {got} при {n} узлах, возможно от {low} до {high}",
+        )
 
 
 def self_check() -> None:
@@ -325,8 +414,10 @@ def self_check() -> None:
     # TODO: добавить собственные проверки (например, инвариант BST после каждой
     #       операции рекурсивной проверкой с границами) и описать их в отчёте.
     if failed:
-        raise SystemExit(f"self_check: не пройдено разделов — {failed}; "
-                         f"замеры выполняются только после всех проверок.")
+        raise SystemExit(
+            f"self_check: не пройдено разделов — {failed}; "
+            f"замеры выполняются только после всех проверок."
+        )
     print("self_check: OK")
 
 
@@ -355,7 +446,7 @@ def run_benchmarks(seed: int) -> None:
     rng = random.Random(seed)
     print(f"{'n':>8} {'h(BST)':>7} {'t_bst, c':>10} {'t_list, c':>10}")
     for n in SIZES:
-        keys = rng.sample(range(10 * n), n)   # случайные ключи без повторов
+        keys = rng.sample(range(10 * n), n)  # случайные ключи без повторов
         queries = [rng.randint(0, 10 * n) for _ in range(QUERIES)]
         tree = BST()
         for k in keys:
@@ -369,8 +460,10 @@ def run_benchmarks(seed: int) -> None:
             for q in queries:
                 q in keys  # линейный поиск для сравнения
 
-        print(f"{n:>8} {tree.height():>7} "
-              f"{bench(search_bst):>10.6f} {bench(search_list):>10.6f}")
+        print(
+            f"{n:>8} {tree.height():>7} "
+            f"{bench(search_bst):>10.6f} {bench(search_list):>10.6f}"
+        )
     # TODO: оформить результаты таблицей/графиком в отчёте;
     # TODO: сопоставить рост t_bst с высотой дерева, а t_list — с n;
     # TODO: в отчёте объяснить деградацию BST на упорядоченных ключах
