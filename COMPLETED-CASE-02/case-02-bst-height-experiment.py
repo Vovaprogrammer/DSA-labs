@@ -263,7 +263,6 @@ def run_experiment(seed: int) -> None:
     path = PLOTS_DIR / f"case02_variant{seed - 30}_loglog.png"
     plot_results((h_rand, h_ord), (d_rand, d_ord), path)
     print(f"график: {path}")
-    # TODO: в отчёте привести вывод-рекомендацию о выборе структуры
 
 
 def main() -> None:
