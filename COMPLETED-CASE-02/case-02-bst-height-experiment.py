@@ -13,9 +13,13 @@
 from __future__ import annotations
 
 import argparse
+import math
 import random
 import statistics
 import time
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 
 # ---------------------------------------------------------------------------
 # 1. Узел и итеративная вставка
@@ -176,6 +180,7 @@ def self_check() -> None:
 
 SIZES = [100, 300, 1_000, 3_000, 10_000]  # геометрический шаг, n до 10^4
 REPEATS = 5
+PLOTS_DIR = Path(__file__).with_name("plots")
 
 
 def random_keys(n: int, rng: random.Random) -> list[int]:
@@ -206,6 +211,26 @@ def bench_search(root: Node | None, queries: list[int]) -> float:
     return statistics.median(times)
 
 
+def plot_results(heights: tuple, depths: tuple, path: Path) -> None:
+    """h(n) и d(n) для двух потоков (случайный, упорядоченный) на фоне log2(n) и n."""
+    # Оси log-log: n — прямая с наклоном 1, log2(n) — почти горизонтальная кривая
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    for ax, title, (rand, ordered) in (
+        (axes[0], "Высота дерева h(n)", heights),
+        (axes[1], "Средняя глубина узла d(n)", depths),
+    ):
+        ax.plot(SIZES, rand, "o-", label="случайный поток")
+        ax.plot(SIZES, ordered, "s-", label="упорядоченный поток")
+        ax.plot(SIZES, [math.log2(n) for n in SIZES], ":", c="gray", label="log₂(n)")
+        ax.plot(SIZES, SIZES, "--", c="gray", label="n")
+        ax.set(xscale="log", yscale="log", title=title, xlabel="n")
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
 def run_experiment(seed: int) -> None:
     """Таблица: n, высота и средняя глубина для двух потоков, опорные величины."""
     rng = random.Random(seed)
@@ -214,20 +239,24 @@ def run_experiment(seed: int) -> None:
         f"{'h_упор':>8} {'d_упор':>8} {'log2(n)':>8}"
     )
     print(header)
-    import math
-
+    h_rand, d_rand, h_ord, d_ord = [], [], [], []  # значения для графиков
     for n in SIZES:
         root_rand = build_bst(random_keys(n, rng))
         root_ord = build_bst(ordered_keys(n))
+        h_rand.append(tree_height(root_rand))
+        d_rand.append(avg_depth(root_rand))
+        h_ord.append(tree_height(root_ord))
+        d_ord.append(avg_depth(root_ord))
         print(
-            f"{n:>7} {tree_height(root_rand):>8} "
-            f"{avg_depth(root_rand):>8.1f} {tree_height(root_ord):>8} "
-            f"{avg_depth(root_ord):>8.1f} {math.log2(n):>8.1f}"
+            f"{n:>7} {h_rand[-1]:>8} {d_rand[-1]:>8.1f} "
+            f"{h_ord[-1]:>8} {d_ord[-1]:>8.1f} {math.log2(n):>8.1f}"
         )
         # TODO: замерить bench_search для обоих деревьев на одинаковых
         #       запросах и включить сравнение времени в отчёт
-    # TODO: построить графики h(n) для обоих потоков на фоне log2(n) и n
-    #       (matplotlib) и включить их в отчёт
+    PLOTS_DIR.mkdir(exist_ok=True)
+    path = PLOTS_DIR / f"case02_variant{seed - 30}_loglog.png"
+    plot_results((h_rand, h_ord), (d_rand, d_ord), path)
+    print(f"график: {path}")
     # TODO: в отчёте объяснить деградацию операций до O(n), привести справку
     #       об AVL (высота <= 1.44*log2(n), цена балансировки) и
     #       вывод-рекомендацию о выборе структуры
